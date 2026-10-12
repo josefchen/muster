@@ -38,6 +38,7 @@ private struct SettingsView: View {
     @State private var needsYou = Settings.notifyNeedsYou
     @State private var done = Settings.notifyDone
     @State private var alert = Attention.enabled
+    @State private var autoUpdate = Updates.automatic
     @State private var agents = Settings.enabledAgents
     @State private var sources = Store.shared.sources
     @State private var notifications: UNAuthorizationStatus = .notDetermined
@@ -149,6 +150,16 @@ private struct SettingsView: View {
                         }
                     }
                 }
+            }
+            Section {
+                LabeledContent("Version") { Text(Updates.version).foregroundStyle(.secondary) }
+                Toggle("Check for updates once a day", isOn: $autoUpdate).onChange(of: autoUpdate) { _, v in Updates.automatic = v }
+                Button("Check for Updates…") { Updates.check(manual: true) }
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text("Asks GitHub for the latest release. Nothing else is sent, and nothing at all unless you check.")
+                    .foregroundStyle(.secondary)
             }
             Section {
                 LabeledContent("Prices from") { Text("Anthropic and OpenAI, \(Pricing.retrieved)").foregroundStyle(.secondary) }

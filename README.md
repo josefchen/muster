@@ -58,7 +58,7 @@ Tokens and API-rate cost for every session, priced per model and per message.
   </picture>
 </p>
 
-<p align="center"><sub>Native AppKit and Liquid Glass · 1.5 MB · about 25 MB of memory · no network · MIT</sub></p>
+<p align="center"><sub>Native AppKit and Liquid Glass · 2 MB · about 25 MB of memory · no accounts, no analytics · MIT</sub></p>
 
 <br>
 
@@ -124,7 +124,7 @@ Use your own prices from **Settings → Use my own prices…**, which writes `~/
 <summary><b>Privacy</b></summary>
 <br>
 
-No accounts, no analytics, no network requests. The prompt server listens on `127.0.0.1` only and needs a token that lives in your user defaults and the agents' hook settings.
+No accounts, no analytics. The only network request is the update check, which happens when you click Check for Updates or turn on the daily check, and asks GitHub for the latest release. The prompt server listens on `127.0.0.1` only and needs a token that lives in your user defaults and the agents' hook settings.
 
 </details>
 

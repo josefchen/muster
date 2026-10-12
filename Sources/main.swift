@@ -80,6 +80,7 @@ final class StatusItem: NSObject {
             if !Hotkeys.shared.conflicts.isEmpty { menu.addItem(.separator()) }
             menu.addItem(withTitle: "About Muster", action: #selector(about), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Welcome Tour…", action: #selector(tour), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
             menu.addItem(.separator())
             menu.addItem(withTitle: "Quit Muster", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -94,6 +95,7 @@ final class StatusItem: NSObject {
 
     @objc private func settings() { onSettings?() }
     @objc private func tour() { onTour?() }
+    @objc private func checkUpdates() { Updates.check(manual: true) }
 
     /// After the tour: point at the icon, or explain where Muster went if the
     /// menu bar is too full to show it.
@@ -323,6 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         attention = Attention()
+        Updates.schedule()
         Hotkeys.shared.onAnswer = { [weak self] a in
             guard let self else { return }
             if self.switcher.isOpen { self.switcher.answer(a) }
