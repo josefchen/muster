@@ -8,7 +8,7 @@ final class Switcher {
     static let showDelay: TimeInterval = 0.12
     static let recentLimit = 5
 
-    private let panel = GlassPanel(cornerRadius: 26, canBecomeKey: false)
+    private let panel = GlassPanel(cornerRadius: 26, canBecomeKey: true)
     private let list = SessionList(frame: .zero)
     private let hint = label(11, .medium, .tertiaryLabelColor)
     private let empty = label(15, .medium, .secondaryLabelColor)
@@ -16,18 +16,25 @@ final class Switcher {
     private var active = false
     private var showTimer: Timer?
     private var releaseWatch: Timer?
+    private var localMouse: Any?
+    private var globalMouse: Any?
+    private var pointing = false
 
     init() {
         hint.alignment = .center
         hint.stringValue = Self.hintText
         empty.alignment = .center
         empty.stringValue = "No agents running"
+        panel.acceptsMouseMovedEvents = true
         [list, hint, empty].forEach(panel.content.addSubview)
+        list.onHover = { [weak self] i in self?.highlight(i) }
+        list.onClick = { [weak self] i in self?.choose(i) }
+        list.updateTrackingAreas()
     }
 
     static var hintText: String {
         let s = Hotkeys.shared.switcher
-        return "\(s.key) next   ·   ⇧\(s.key) back   ·   release \(s.symbols.replacingOccurrences(of: "⇧", with: "")) to open   ·   Esc cancel"
+        return "\(s.key) next   ·   ⇧\(s.key) back   ·   click or release to open   ·   Esc cancel"
     }
 
     func step(_ delta: Int) {
@@ -53,6 +60,7 @@ final class Switcher {
         snapshot = Self.pick(Store.shared.sessions)
         layout()
         watchRelease()
+        watchPointer()
         showTimer = Timer.scheduledTimer(withTimeInterval: Self.showDelay, repeats: false) { [weak self] _ in self?.reveal() }
     }
 
@@ -83,6 +91,7 @@ final class Switcher {
         guard active else { return }
         panel.alphaValue = 0
         panel.orderFrontRegardless()
+        panel.makeKey()
         panel.invalidateShadow()
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0.12
@@ -102,13 +111,60 @@ final class Switcher {
         }
     }
 
+    /// The panel is non-activating, so a click can land in the app behind it.
+    /// The global monitor catches that case. Events this app does receive come
+    /// through the list, and the two never both fire for one click.
+    private func watchPointer() {
+        localMouse = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved]) { [weak self] event in
+            self?.pointer(event, click: event.type == .leftMouseDown)
+            return event
+        }
+        globalMouse = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved]) { [weak self] event in
+            self?.pointer(event, click: event.type == .leftMouseDown)
+        }
+    }
+
+    private func pointer(_ event: NSEvent, click: Bool) {
+        guard active, panel.isVisible else { return }
+        let mouse = NSEvent.mouseLocation
+        guard panel.frame.contains(mouse) else {
+            if pointing { NSCursor.arrow.set(); pointing = false }
+            return
+        }
+        let inList = list.convert(panel.convertPoint(fromScreen: mouse), from: nil)
+        guard let i = list.rowIndex(at: inList) else {
+            if pointing { NSCursor.arrow.set(); pointing = false }
+            return
+        }
+        if click { choose(i) } else { highlight(i) }
+    }
+
+    private func highlight(_ i: Int) {
+        guard active, snapshot.indices.contains(i) else { return }
+        if !pointing { NSCursor.pointingHand.set(); pointing = true }
+        guard i != list.selected else { return }
+        list.select(i, animated: true)
+    }
+
+    private func choose(_ i: Int) {
+        guard active, snapshot.indices.contains(i) else { return }
+        let chosen = snapshot[i]
+        end()
+        Opener.open(chosen)
+    }
+
     private func end() {
         active = false
         Hotkeys.shared.answerKeys(false)
         showTimer?.invalidate()
         releaseWatch?.invalidate()
+        if let localMouse { NSEvent.removeMonitor(localMouse) }
+        if let globalMouse { NSEvent.removeMonitor(globalMouse) }
         showTimer = nil
         releaseWatch = nil
+        localMouse = nil
+        globalMouse = nil
+        if pointing { NSCursor.arrow.set(); pointing = false }
         panel.orderOut(nil)
     }
 }

@@ -258,6 +258,12 @@ final class SessionList: Flipped {
 
     func rowFrame(_ index: Int) -> NSRect? { rowFrames.indices.contains(index) ? rowFrames[index] : nil }
 
+    func rowIndex(at point: NSPoint) -> Int? { rowFrames.firstIndex { $0.contains(point) } }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        super.hitTest(point) == nil ? nil : self
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)

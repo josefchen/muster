@@ -88,7 +88,7 @@ Muster adds one hook to the agent's own settings, keeps a backup, and removes ex
 
 | Keys | |
 |---|---|
-| <kbd>⌥</kbd> <kbd>Tab</kbd> | Switch: tap to step, release to open |
+| <kbd>⌥</kbd> <kbd>Tab</kbd> | Switch. Tap to step, release to open, or click a row |
 | <kbd>⌥</kbd> <kbd>↩</kbd> · <kbd>⌥</kbd> <kbd>⌫</kbd> · <kbd>⌥</kbd> <kbd>1</kbd>–<kbd>9</kbd> | Allow · deny · answer the selected prompt |
 | <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>Space</kbd> | Search every session |
 
