@@ -6,7 +6,8 @@
 # never touched. Run one at a time: runs share the dev.muster.e2e settings.
 #
 #   scripts/e2e.sh                headless suite, then again as x86_64 if Rosetta is installed
-#   scripts/e2e.sh --soak [min]   CPU and memory with ten busy agents and a 500 MB transcript (default 10)
+#   scripts/e2e.sh --soak [min]   CPU and memory with ten busy agents and a 500 MB transcript (default 10);
+#                                 MUSTER_SOAK_CPU_LIMIT overrides the 1.5 % average CPU limit
 #   scripts/e2e.sh --ui           real keystrokes and clicks; see below
 #   scripts/e2e.sh --build-only   compile everything, run nothing
 #

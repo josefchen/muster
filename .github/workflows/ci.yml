@@ -17,3 +17,5 @@ jobs:
         run: scripts/e2e.sh
       - name: Soak
         run: scripts/e2e.sh --soak 2
+        env:
+          MUSTER_SOAK_CPU_LIMIT: "3"

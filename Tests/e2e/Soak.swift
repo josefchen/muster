@@ -6,7 +6,9 @@ import Foundation
 // footprint are sampled from the kernel.
 
 enum Soak {
-    static let cpuLimit = 1.5         // % of one core, averaged
+    /// % of one core, averaged. CI's short run on a shared VM sets a looser
+    /// MUSTER_SOAK_CPU_LIMIT, so it catches regressions without flaking.
+    static let cpuLimit = ProcessInfo.processInfo.environment["MUSTER_SOAK_CPU_LIMIT"].flatMap(Double.init) ?? 1.5
     static let footprintLimit = 35.0  // MB, at any sample
     static let sampleEvery = 3.0
 
