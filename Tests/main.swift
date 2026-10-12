@@ -199,6 +199,95 @@ for i in 0..<20_000 {
 }
 check(consistent, "20,000 fuzzed requests parse without trapping, each with the body it promised")
 
+print("Hook server")
+let serverQueue = DispatchQueue(label: "muster-tests.server")
+let server = HookServer(ports: 47_700...47_719, queue: serverQueue)
+var held: [HookServer.Exchange] = []
+var serverPort: UInt16 = 0
+let listening = DispatchSemaphore(value: 0)
+server.onReady = { serverPort = $0; listening.signal() }
+server.onRequest = { r, x in
+    if r.path == "/hold" { held.append(x) } else { x.reply(Data(#"{"ok":true}"#.utf8)) }
+}
+serverQueue.sync { server.deadline = 0.5; server.maxIncoming = 3; server.start(on: 47_700) }
+check(listening.wait(timeout: .now() + 5) == .success, "the server listens on 127.0.0.1")
+
+/// A plain TCP client, so the tests can misbehave the way a hostile one would.
+func dial() -> Int32 {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    var addr = sockaddr_in()
+    addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    addr.sin_family = sa_family_t(AF_INET)
+    addr.sin_port = serverPort.bigEndian
+    addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+    var one: Int32 = 1
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+    let ok = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+    }
+    return ok == 0 ? fd : -1
+}
+func send(_ fd: Int32, _ text: String) {
+    let bytes = Array(text.utf8)
+    _ = bytes.withUnsafeBytes { Darwin.send(fd, $0.baseAddress, $0.count, 0) }
+}
+/// Everything the server sent once it closed, or nil if it was still open after `wait` seconds.
+func closed(_ fd: Int32, wait: Double) -> String? {
+    var tv = timeval(tv_sec: Int(wait), tv_usec: Int32((wait - Double(Int(wait))) * 1_000_000))
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+    var out = Data()
+    var buffer = [UInt8](repeating: 0, count: 4096)
+    while true {
+        let n = recv(fd, &buffer, buffer.count, 0)
+        if n > 0 { out.append(contentsOf: buffer[0..<n]); continue }
+        if n < 0, errno == EAGAIN || errno == EWOULDBLOCK { return nil }
+        return String(decoding: out, as: UTF8.self)
+    }
+}
+let hello = post(["Content-Length: 2"])
+
+var started = Date()
+var idle = dial()
+check(closed(idle, wait: 3) != nil && Date().timeIntervalSince(started) < 2, "a client that sends nothing is closed at the deadline")
+close(idle)
+started = Date()
+idle = dial()
+send(idle, "POST /x HTTP/1.1\r\nContent-Length: 10\r\n\r\n{")
+check(closed(idle, wait: 3) != nil && Date().timeIntervalSince(started) < 2, "a request that never finishes is closed at the deadline")
+close(idle)
+
+serverQueue.sync { server.deadline = 30 }
+let crowd = (0..<3).map { _ in dial() }
+let extra = dial()
+check(closed(extra, wait: 2) != nil, "past the cap on half-sent requests, a new connection is turned away")
+close(extra)
+close(crowd[0])
+Thread.sleep(forTimeInterval: 0.3)
+let next = dial()
+send(next, hello)
+check(closed(next, wait: 3)?.hasPrefix("HTTP/1.1 200 OK") == true, "a slot frees up when a half-sent request goes away")
+close(next)
+crowd.dropFirst().forEach { close($0) }
+Thread.sleep(forTimeInterval: 0.3)
+
+serverQueue.sync { server.deadline = 0.5 }
+let holder = dial()
+send(holder, "POST /hold HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}")
+check(closed(holder, wait: 1.5) == nil, "a request held for an answer outlives the deadline")
+serverQueue.sync { held.first?.reply(Data(#"{"answer":1}"#.utf8)) }
+check(closed(holder, wait: 3)?.hasSuffix(#"{"answer":1}"#) == true, "and gets its answer when it comes")
+close(holder)
+
+let hostile = dial()
+send(hostile, "POST / HTTP/1.1\r\nContent-Length: -5\r\n\r\n")
+check(closed(hostile, wait: 3) == "", "a malformed request is closed without an answer")
+close(hostile)
+let after = dial()
+send(after, hello)
+check(closed(after, wait: 3)?.hasPrefix("HTTP/1.1 200 OK") == true, "and the server keeps serving")
+close(after)
+serverQueue.sync { server.stop() }
+
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

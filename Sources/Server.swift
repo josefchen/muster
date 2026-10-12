@@ -10,7 +10,15 @@ final class HookServer {
     let queue: DispatchQueue
     var onReady: ((UInt16) -> Void)?
     var onRequest: ((HTTPRequest, Exchange) -> Void)?
+    /// A client gets this long to send its whole request, so a stalled one
+    /// can't keep a connection forever. A request held for an answer isn't timed.
+    var deadline: TimeInterval = 10
+    /// Connections still sending at once. Hooks finish in milliseconds, so past
+    /// this new ones are closed straight away.
+    var maxIncoming = 16
     private var listener: NWListener?
+    /// Connections still sending, each with its deadline.
+    private var incoming: [ObjectIdentifier: DispatchWorkItem] = [:]
 
     init(ports: ClosedRange<UInt16>, queue: DispatchQueue = .main) {
         self.ports = ports
@@ -74,8 +82,21 @@ final class HookServer {
     }
 
     private func accept(_ c: NWConnection) {
+        guard incoming.count < maxIncoming else { c.cancel(); return }
+        let id = ObjectIdentifier(c)
+        let late = DispatchWorkItem { [weak self] in
+            self?.incoming[id] = nil
+            c.cancel()
+        }
+        incoming[id] = late
+        queue.asyncAfter(deadline: .now() + deadline, execute: late)
         c.start(queue: queue)
         read(c, Data())
+    }
+
+    /// Done sending: a whole request, or nothing more to wait for.
+    private func arrived(_ c: NWConnection) {
+        incoming.removeValue(forKey: ObjectIdentifier(c))?.cancel()
     }
 
     private func read(_ c: NWConnection, _ buffer: Data) {
@@ -85,10 +106,12 @@ final class HookServer {
             if let data { buffer.append(data) }
             switch HTTPRequest.parse(buffer) {
             case .complete(let request):
+                self.arrived(c)
                 self.onRequest?(request, Exchange(connection: c))
             case .partial where !done && error == nil:
                 self.read(c, buffer)
             default:
+                self.arrived(c)
                 c.cancel()
             }
         }
