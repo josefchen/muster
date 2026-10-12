@@ -37,6 +37,7 @@ private struct SettingsView: View {
     @State private var launch = Settings.launchAtLogin
     @State private var needsYou = Settings.notifyNeedsYou
     @State private var done = Settings.notifyDone
+    @State private var alert = Attention.enabled
     @State private var agents = Settings.enabledAgents
     @State private var sources = Store.shared.sources
     @State private var notifications: UNAuthorizationStatus = .notDetermined
@@ -117,6 +118,21 @@ private struct SettingsView: View {
                      + "If Muster isn't running, the agent asks as usual. Cursor's hooks can't step aside for prompts it would "
                      + "auto-approve, so Cursor prompts open in Cursor.")
                     .foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle(isOn: $alert) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Show an alert at the top of the screen")
+                        Text("Stays until you answer or dismiss it. Works in Focus modes and with a full menu bar.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                .onChange(of: alert) { _, v in
+                    Attention.enabled = v
+                    NotificationCenter.default.post(name: Attention.changed, object: nil)
+                }
+            } header: {
+                Text("When an agent needs you")
             }
             Section("Notify me when a session") {
                 Toggle("Needs me or hits an error", isOn: $needsYou).onChange(of: needsYou) { _, v in Settings.notifyNeedsYou = v }

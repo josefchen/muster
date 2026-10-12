@@ -289,6 +289,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let settings = Windows()
     private var notifier: Notifier?
     private var welcome: Welcome!
+    private var attention: Attention!
 
     func deckToggle() { deck.toggle(below: nil) }
 
@@ -321,7 +322,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .search: self.deck.toggle(below: nil)
             }
         }
-        Hotkeys.shared.onAnswer = { [weak self] a in self?.switcher.answer(a) }
+        attention = Attention()
+        Hotkeys.shared.onAnswer = { [weak self] a in
+            guard let self else { return }
+            if self.switcher.isOpen { self.switcher.answer(a) }
+            else if self.deck.isVisible { self.deck.answer(a) }
+            else { self.attention.answer(a) }
+        }
         if Bundle.main.bundleIdentifier != nil && !Store.demo { notifier = Notifier() }
         if Store.demo, CommandLine.arguments.contains("--backdrop") { Demo.showBackdrop() }
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),

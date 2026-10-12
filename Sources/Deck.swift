@@ -98,6 +98,13 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
 
     /// ⌥Return allows, ⌥⇧Return always allows, ⌥Delete denies, ⌥1–9 answers, for the
     /// selected row's prompt (with the switcher's modifiers, ⌥ by default).
+    /// Answer the selected row's prompt.
+    func answer(_ a: Answer) {
+        guard shown.indices.contains(list.selected), let id = shown[list.selected].promptID,
+              let p = Prompts.shared.pending[id] else { return }
+        Prompts.shared.answer(p, a)
+    }
+
     private func answerKey(_ e: NSEvent) -> Bool {
         let held = e.modifierFlags.intersection([.control, .option, .command])
         guard held == Hotkeys.shared.switcher.flags.intersection([.control, .option, .command]), !held.isEmpty,

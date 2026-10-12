@@ -73,6 +73,7 @@ final class Hotkeys: ObservableObject {
     var onAnswer: ((Answer) -> Void)?
     private var refs: [EventHotKeyRef] = []
     private var answerRefs: [EventHotKeyRef] = []
+    private var answerOwners: Set<String> = []
     private var installed = false
 
     private init() {
@@ -100,6 +101,7 @@ final class Hotkeys: ObservableObject {
         switcher = s
         save(s, "shortcut.switcher")
         register()
+        if !answerOwners.isEmpty { registerAnswerKeys() }
     }
 
     func set(search s: Shortcut) {
@@ -108,12 +110,18 @@ final class Hotkeys: ObservableObject {
         register()
     }
 
-    /// Return / ⇧Return / Delete / 1–9 with the switcher's modifiers answer the
-    /// selected prompt, registered only while the switcher is open.
-    func answerKeys(_ on: Bool) {
+    /// Return / ⇧Return / Delete / 1–9 with the switcher's modifiers answer a
+    /// prompt, registered only while the switcher or the alert shows one.
+    func answerKeys(_ on: Bool, owner: String) {
+        let before = !answerOwners.isEmpty
+        if on { answerOwners.insert(owner) } else { answerOwners.remove(owner) }
+        if before != !answerOwners.isEmpty { registerAnswerKeys() }
+    }
+
+    private func registerAnswerKeys() {
         answerRefs.forEach { UnregisterEventHotKey($0) }
         answerRefs.removeAll()
-        guard on else { return }
+        guard !answerOwners.isEmpty else { return }
         let m = switcher.modifiers
         let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9]
         var keys: [(UInt32, UInt32, UInt32)] = [(10, UInt32(kVK_Return), m), (11, UInt32(kVK_Return), m | UInt32(shiftKey)),

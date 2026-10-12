@@ -124,6 +124,9 @@ final class SessionRow: Flipped {
             line.append(NSAttributedString(string: p.detail, attributes: [
                 .foregroundColor: NSColor.labelColor,
                 .font: code ? NSFont.monospacedSystemFont(ofSize: 11.5, weight: .medium) : NSFont.systemFont(ofSize: 12, weight: .medium)]))
+            let truncate = NSMutableParagraphStyle()
+            truncate.lineBreakMode = .byTruncatingTail
+            line.addAttribute(.paragraphStyle, value: truncate, range: NSRange(location: 0, length: line.length))
             if detail.attributedStringValue != line { detail.attributedStringValue = line }
         } else {
                 detail.attributedStringValue = NSAttributedString(string: "")

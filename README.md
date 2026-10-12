@@ -25,7 +25,7 @@
 <td width="50%" valign="top">
 
 **See who needs you.**<br>
-A count in the menu bar the moment an agent waits on you. Everything else stays quiet.
+A glass alert at the top of the screen the moment an agent waits on you. It stays until you answer.
 
 </td>
 <td width="50%" valign="top">
