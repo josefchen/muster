@@ -16,6 +16,13 @@ enum Settings {
         get { !d.bool(forKey: "mute.done") }
         set { d.set(!newValue, forKey: "mute.done") }
     }
+    enum CostDisplay: String, CaseIterable { case costAndTokens, tokens, hidden }
+
+    static var costDisplay: CostDisplay {
+        get { d.string(forKey: "costDisplay").flatMap(CostDisplay.init) ?? .costAndTokens }
+        set { d.set(newValue.rawValue, forKey: "costDisplay") }
+    }
+
     static var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set { try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }

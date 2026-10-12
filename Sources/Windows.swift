@@ -39,6 +39,8 @@ private struct SettingsView: View {
     @State private var done = Settings.notifyDone
     @State private var alert = Attention.enabled
     @State private var autoUpdate = Updates.automatic
+    @State private var costDisplay = Settings.costDisplay
+    @State private var week = Stats.week()
     @State private var agents = Settings.enabledAgents
     @State private var sources = Store.shared.sources
     @State private var notifications: UNAuthorizationStatus = .notDetermined
@@ -162,6 +164,24 @@ private struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Section {
+                LabeledContent("This week") {
+                    Text(Stats.summary(week)).foregroundStyle(.secondary).multilineTextAlignment(.trailing)
+                }
+            } header: {
+                Text("What Muster did for you")
+            } footer: {
+                Text(Stats.assumption + " Counted on this Mac only.").foregroundStyle(.secondary)
+            }
+            Section {
+                Picker("Show on each session", selection: $costDisplay) {
+                    Text("Cost and tokens").tag(Settings.CostDisplay.costAndTokens)
+                    Text("Tokens only").tag(Settings.CostDisplay.tokens)
+                    Text("Nothing").tag(Settings.CostDisplay.hidden)
+                }
+                .onChange(of: costDisplay) { _, v in
+                    Settings.costDisplay = v
+                    Store.shared.refreshPrompts()
+                }
                 LabeledContent("Prices from") { Text("Anthropic and OpenAI, \(Pricing.retrieved)").foregroundStyle(.secondary) }
                 Button("Use my own prices…") { Self.revealPricingFile() }
             } header: {
@@ -180,6 +200,7 @@ private struct SettingsView: View {
         sources = Store.shared.sources
         answering = [.claude: HookInstaller.isInstalled(.claude), .codex: HookInstaller.isInstalled(.codex)]
         broken = HookInstaller.brokenClaudeHooks()
+        week = Stats.week()
         Notifier.status { notifications = $0 }
     }
 

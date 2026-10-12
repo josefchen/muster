@@ -107,8 +107,13 @@ final class SessionRow: Flipped {
 
     static func usageText(_ s: Session) -> String {
         guard s.tokens > 0 else { return "" }
-        if let c = s.cost { return "\(money(c))  ·  \(compact(s.tokens))" }
-        return "\(compact(s.tokens)) tokens"
+        switch Settings.costDisplay {
+        case .hidden: return ""
+        case .tokens: return "\(compact(s.tokens)) tokens"
+        case .costAndTokens:
+            if let c = s.cost { return "≈ \(money(c)) API  ·  \(compact(s.tokens))" }
+            return "\(compact(s.tokens)) tokens"
+        }
     }
 
     func show(_ s: Session, now: Date) {

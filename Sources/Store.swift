@@ -166,6 +166,7 @@ enum Opener {
     static func open(_ s: Session) {
         guard !Store.demo else { return }
         Store.shared.markOpened(s)
+        Stats.record(.jumped)
         if let host = ProcessHost.app(running: s), !s.agent.bundleIDs.contains(host.bundleIdentifier ?? "") {
             host.activate()
             return

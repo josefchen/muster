@@ -158,6 +158,7 @@ final class Prompts {
         }
         reply(out.flatMap { try? JSONSerialization.data(withJSONObject: $0) } ?? Data())
         drop(p.id)
+        Stats.record(.answered)
         Store.shared.refreshPrompts()
     }
 

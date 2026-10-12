@@ -139,8 +139,9 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         let total = shown.reduce(0) { $0 + $1.tokens }
         let cost = shown.compactMap(\.cost).reduce(0, +)
         var parts = ["\(shown.count) session\(shown.count == 1 ? "" : "s")"]
-        if total > 0 { parts.append("\(compact(total)) tokens") }
-        if cost > 0 { parts.append("≈ \(money(cost)) at API rates") }
+        let display = Settings.costDisplay
+        if total > 0, display != .hidden { parts.append("\(compact(total)) tokens") }
+        if cost > 0, display == .costAndTokens { parts.append("≈ \(money(cost)) at API rates") }
         set(footer, parts.joined(separator: "   ·   "))
         footer.toolTip = "What these sessions would cost on the public APIs (prices from \(Pricing.retrieved)). Not your subscription bill."
     }

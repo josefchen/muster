@@ -109,6 +109,23 @@ print("Pricing")
 check(Pricing.price(for: "claude-haiku-4-5-20251001") != nil, "dated model ids resolve by prefix")
 check(Pricing.price(for: "some-new-model") == nil, "unknown models are not priced")
 
+print("Stats")
+let suite = "muster-tests-\(UUID().uuidString)"
+Stats.store = UserDefaults(suiteName: suite)!
+var monday = DateComponents(calendar: Calendar(identifier: .iso8601), year: 2026, month: 10, day: 12, hour: 9).date!
+Stats.record(.answered, at: monday)
+Stats.record(.answered, at: monday.addingTimeInterval(86_400 * 6))
+Stats.record(.jumped, at: monday)
+check(Stats.week(of: monday).answered == 2 && Stats.week(of: monday).jumps == 1, "Monday to Sunday count as one week")
+check(Stats.week(of: monday.addingTimeInterval(86_400 * 7)).answered == 0, "a new week starts at zero")
+check(Stats.week(of: monday).saved == 2 * Stats.secondsPerAnswer + Stats.secondsPerJump, "time saved follows the stated assumptions")
+check(Stats.summary(Stats.Week(answered: 48, jumps: 132)) == "48 prompts answered without switching  ·  132 jumps  ·  about 23 min saved",
+      "the summary reads as counts first, then the estimate")
+monday = monday.addingTimeInterval(86_400 * 7 * 13)
+Stats.record(.jumped, at: monday)
+check((Stats.store.dictionary(forKey: "stats.weeks") ?? [:]).count == 1, "weeks older than twelve are dropped")
+UserDefaults.standard.removePersistentDomain(forName: suite)
+
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
