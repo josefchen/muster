@@ -61,29 +61,124 @@ struct HTTPRequest {
 
 // MARK: - Settings files
 
-/// An agent's JSON settings, read and changed in place.
+/// An agent's JSON settings, changed without losing anything of yours.
+///
+/// - `<file>.muster-original` is the file as it was before Muster first changed
+///   it, and is never overwritten. If you delete it, the next edit saves the
+///   oldest copy there is.
+/// - `<file>.muster-backup` is the file as it was before the latest change.
+/// - A symlinked file (into a dotfiles repo, say) stays a link and its target is
+///   changed. The backups sit beside the link.
+/// - The file keeps its permissions, and a read-only one isn't changed.
+/// - The agent writes the file too. Right before replacing it Muster checks it
+///   still holds what was read, and if not, redoes the change on the new content.
+/// - A file that isn't a JSON object (broken, or with comments) is left alone.
 enum SettingsFile {
+    static let originalSuffix = ".muster-original"
+    static let backupSuffix = ".muster-backup"
+
     static func read(_ path: String) -> [String: Any]? {
-        FileManager.default.contents(atPath: path).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+        FileManager.default.contents(atPath: path).flatMap { try? parse($0, path) }
     }
 
-    /// Every edit keeps a backup beside the original file.
     static func edit(_ path: String, _ change: (inout [String: Any]) throws -> Void) throws {
         let fm = FileManager.default
-        var d: [String: Any] = [:]
-        if let data = fm.contents(atPath: path) {
-            guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                throw NSError(domain: "Muster", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(path) isn't valid JSON, so Muster left it alone."])
+        let target = try resolve(path)
+        for _ in 0..<5 {
+            let before = fm.contents(atPath: target)
+            if before == nil, fm.fileExists(atPath: target) { throw failure(path, "couldn't be read") }
+            var d = try before.map { try parse($0, path) } ?? [:]
+            let old = d as NSDictionary
+            try change(&d)
+            if (d as NSDictionary) == old { return }
+            if before == nil {
+                try fm.createDirectory(atPath: (target as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            } else if !fm.isWritableFile(atPath: target) {
+                throw failure(path, "is read-only")
             }
-            d = parsed
-            try? fm.removeItem(atPath: path + ".muster-backup")
-            try fm.copyItem(atPath: path, toPath: path + ".muster-backup")
-        } else {
-            try fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+            let out = try JSONSerialization.data(withJSONObject: d, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+            let mode = (try? fm.attributesOfItem(atPath: target))?[.posixPermissions] as? Int ?? 0o600
+            let staged = try stage(out, beside: target, mode: mode)
+            do {
+                if let before { try backUp(before, path, mode: mode) }
+            } catch {
+                unlink(staged)
+                throw error
+            }
+            // Last look: if the agent wrote the file meanwhile, start over from its version.
+            guard fm.contents(atPath: target) == before else { unlink(staged); continue }
+            guard rename(staged, target) == 0 else { let code = errno; unlink(staged); throw posix(code, path) }
+            return
         }
-        try change(&d)
-        let out = try JSONSerialization.data(withJSONObject: d, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try out.write(to: URL(fileURLWithPath: path), options: .atomic)
+        throw failure(path, "kept changing while Muster was editing it")
+    }
+
+    /// The error shown when Muster won't touch a file.
+    static func failure(_ path: String, _ reason: String) -> NSError {
+        NSError(domain: "Muster", code: 1, userInfo: [NSLocalizedDescriptionKey:
+            "\((path as NSString).abbreviatingWithTildeInPath) \(reason), so Muster left it alone."])
+    }
+
+    private static func posix(_ code: Int32, _ path: String) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code), userInfo: [NSLocalizedDescriptionKey:
+            "Muster couldn't write \((path as NSString).abbreviatingWithTildeInPath): \(String(cString: strerror(code)))."])
+    }
+
+    /// An empty file counts as no settings yet.
+    private static func parse(_ data: Data, _ path: String) throws -> [String: Any] {
+        if data.allSatisfy({ [9, 10, 13, 32].contains($0) }) { return [:] }
+        guard let any = try? JSONSerialization.jsonObject(with: data) else { throw failure(path, "isn't valid JSON") }
+        guard let d = any as? [String: Any] else { throw failure(path, "isn't a JSON object") }
+        return d
+    }
+
+    /// The file at the end of any symlinks.
+    private static func resolve(_ path: String) throws -> String {
+        var p = path
+        for _ in 0..<32 {
+            guard let next = try? FileManager.default.destinationOfSymbolicLink(atPath: p) else { return p }
+            p = next.hasPrefix("/") ? next : ((p as NSString).deletingLastPathComponent as NSString).appendingPathComponent(next)
+        }
+        throw failure(path, "is a loop of symlinks")
+    }
+
+    private static func backUp(_ data: Data, _ path: String, mode: Int) throws {
+        let fm = FileManager.default
+        let original = path + originalSuffix, latest = path + backupSuffix
+        if (try? fm.attributesOfItem(atPath: original)) == nil {
+            // Earlier versions kept only .muster-backup; it's older than the file now.
+            let earlier = (try? fm.attributesOfItem(atPath: latest))?[.type] as? FileAttributeType == .typeRegular
+            try replace(original, with: (earlier ? fm.contents(atPath: latest) : nil) ?? data, mode: mode)
+        }
+        try replace(latest, with: data, mode: mode)
+    }
+
+    /// Swaps in a new file whole, never following a symlink at `path`.
+    private static func replace(_ path: String, with data: Data, mode: Int) throws {
+        let staged = try stage(data, beside: path, mode: mode)
+        guard rename(staged, path) == 0 else { let code = errno; unlink(staged); throw posix(code, path) }
+    }
+
+    /// Writes a new file next to `path` with `mode`, ready to rename over it.
+    private static func stage(_ data: Data, beside path: String, mode: Int) throws -> String {
+        let staged = (path as NSString).deletingLastPathComponent + "/." + (path as NSString).lastPathComponent
+            + ".muster-" + UUID().uuidString.prefix(8)
+        let fd = open(staged, O_WRONLY | O_CREAT | O_EXCL, mode_t(mode & 0o777))
+        guard fd >= 0 else { throw posix(errno, path) }
+        defer { close(fd) }
+        fchmod(fd, mode_t(mode & 0o777))   // open's mode is narrowed by the umask
+        let written = data.withUnsafeBytes { buffer -> Bool in
+            var offset = 0
+            while offset < buffer.count {
+                let n = write(fd, buffer.baseAddress! + offset, buffer.count - offset)
+                if n < 0, errno == EINTR { continue }
+                if n <= 0 { return false }
+                offset += n
+            }
+            return true
+        }
+        guard written, fsync(fd) == 0 else { let code = errno; unlink(staged); throw posix(code, path) }
+        return staged
     }
 }
 
@@ -168,9 +263,15 @@ struct Hooks {
     func install() throws {
         guard agent != .cursor else { return }
         try SettingsFile.edit(path) { d in
+            guard d["hooks"] == nil || d["hooks"] is [String: Any] else {
+                throw SettingsFile.failure(path, "has \"hooks\" that aren't an object")
+            }
             var hooks = d["hooks"] as? [String: Any] ?? [:]
             for (event, group) in groups {
-                hooks[event] = strip(hooks[event]) + [group]
+                guard hooks[event] == nil || hooks[event] is [Any] else {
+                    throw SettingsFile.failure(path, "has \(event) hooks that aren't a list")
+                }
+                hooks[event] = Self.removing(from: hooks[event] as? [Any] ?? [], where: isMuster).kept + [group]
             }
             d["hooks"] = hooks
         }
@@ -201,24 +302,37 @@ struct Hooks {
     /// Removes any Muster's hooks, so turning it off always leaves none behind.
     func uninstall() throws {
         guard agent != .cursor, FileManager.default.fileExists(atPath: path) else { return }
-        try SettingsFile.edit(path) { d in
-            var hooks = d["hooks"] as? [String: Any] ?? [:]
-            for (event, value) in hooks {
-                let kept = strip(value)
-                hooks[event] = kept.isEmpty ? nil : kept
-            }
-            d["hooks"] = hooks.isEmpty ? nil : hooks
-        }
+        try SettingsFile.edit(path) { Self.remove(from: &$0, where: isMuster) }
     }
 
-    /// The event's hook groups without any of Muster's.
-    private func strip(_ value: Any?) -> [[String: Any]] {
-        (value as? [[String: Any]] ?? []).compactMap { group in
-            let handlers = (group["hooks"] as? [[String: Any]] ?? []).filter { !isMuster($0) }
-            guard !handlers.isEmpty else { return nil }
-            var g = group
-            g["hooks"] = handlers
-            return g
+    /// Takes the handlers `drop` picks out of every event, then any group or
+    /// event that leaves empty. Entries it doesn't recognise stay as they are.
+    static func remove(from d: inout [String: Any], where drop: ([String: Any]) -> Bool) {
+        guard var hooks = d["hooks"] as? [String: Any] else { return }
+        var changed = false
+        for (event, value) in hooks {
+            guard let list = value as? [Any] else { continue }
+            let (kept, removed) = removing(from: list, where: drop)
+            guard removed else { continue }
+            changed = true
+            hooks[event] = kept.isEmpty ? nil : kept
         }
+        guard changed else { return }
+        d["hooks"] = hooks.isEmpty ? nil : hooks
+    }
+
+    /// An event's hook groups without the handlers `drop` picks, and whether it picked any.
+    private static func removing(from list: [Any], where drop: ([String: Any]) -> Bool) -> (kept: [Any], removed: Bool) {
+        var removed = false
+        let kept: [Any] = list.compactMap { item in
+            guard var group = item as? [String: Any], let handlers = group["hooks"] as? [Any] else { return item }
+            let others = handlers.filter { !(($0 as? [String: Any]).map(drop) ?? false) }
+            guard others.count < handlers.count else { return item }
+            removed = true
+            guard !others.isEmpty else { return nil }
+            group["hooks"] = others
+            return group
+        }
+        return (kept, removed)
     }
 }

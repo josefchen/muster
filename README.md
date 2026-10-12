@@ -82,7 +82,7 @@ Turn it on per agent in **Settings → Answer prompts from Muster**.
 | **Codex** | Approval requests (trust the hook once with `/hooks` in Codex) |
 | **Cursor** | Opens the prompt in Cursor |
 
-Muster adds one hook to the agent's own settings, keeps a backup, and removes exactly that when you turn it off. Claude's native dialog stays live alongside Muster, and the first answer wins. If Muster isn't running, the agent asks as usual. Hooks talk to Muster on `127.0.0.1` with a per-install token.
+Muster adds one hook to the agent's own settings and removes exactly that when you turn it off. Beside the file it keeps `.muster-original`, the file as it was before Muster first changed it, and `.muster-backup`, the file before the latest change. A symlinked settings file stays a link, and a file Muster can't parse is left alone. Claude's native dialog stays live alongside Muster, and the first answer wins. If Muster isn't running, the agent asks as usual. Hooks talk to Muster on `127.0.0.1` with a per-install token.
 
 ## Shortcuts
 

@@ -239,7 +239,7 @@ final class Prompts {
 // MARK: - Installing the hooks
 
 /// Adds Muster's hooks to each agent's own settings, and removes exactly those
-/// again. Every edit keeps a backup beside the original file.
+/// again. SettingsFile keeps the copies beside the file.
 enum HookInstaller {
     static var claudeSettings: String { (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? home + "/.claude") + "/settings.json" }
     static var codexHooks: String { (ProcessInfo.processInfo.environment["CODEX_HOME"] ?? home + "/.codex") + "/hooks.json" }
@@ -282,20 +282,7 @@ enum HookInstaller {
     }
 
     static func removeBrokenClaudeHooks() throws {
-        try SettingsFile.edit(claudeSettings) { d in
-            var hooks = d["hooks"] as? [String: Any] ?? [:]
-            for (event, value) in hooks {
-                let kept: [[String: Any]] = (value as? [[String: Any]] ?? []).compactMap { group in
-                    let handlers = (group["hooks"] as? [[String: Any]] ?? []).filter { missingProgram($0["command"] as? String) == nil }
-                    guard !handlers.isEmpty else { return nil }
-                    var g = group
-                    g["hooks"] = handlers
-                    return g
-                }
-                hooks[event] = kept.isEmpty ? nil : kept
-            }
-            d["hooks"] = hooks.isEmpty ? nil : hooks
-        }
+        try SettingsFile.edit(claudeSettings) { Hooks.remove(from: &$0) { missingProgram($0["command"] as? String) != nil } }
     }
 
     /// The command's program, if it's an absolute path that isn't there.

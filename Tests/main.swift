@@ -336,6 +336,137 @@ try! other.uninstall()
 check(!text(shared).contains("X-Muster-Token") && groups(shared, "PermissionRequest").count == 2,
       "turning hooks off removes any Muster's, and only those")
 
+print("Settings edits")
+func bytes(_ path: String) -> Data? { fm.contents(atPath: path) }
+func mode(_ path: String) -> Int? { (try? fm.attributesOfItem(atPath: path))?[.posixPermissions] as? Int }
+func isLink(_ path: String) -> Bool { (try? fm.attributesOfItem(atPath: path))?[.type] as? FileAttributeType == .typeSymbolicLink }
+func same(_ path: String, _ expected: [String: Any]) -> Bool { (object(path) as NSDictionary) == (expected as NSDictionary) }
+func claudeHooks(_ path: String) -> Hooks { Hooks(agent: .claude, path: path, port: 47621, token: tokenA) }
+func failure(_ run: () throws -> Void) -> String? {
+    do { try run(); return nil } catch { return error.localizedDescription }
+}
+
+let settings: [String: Any] = [
+    "model": "opus", "includeCoAuthoredBy": false, "cleanupPeriodDays": 30, "temperature": 0.5,
+    "env": ["API_KEY": "sk-not-real", "GREETING": "grüß dich"],
+    "permissions": ["allow": ["Bash(ls:*)", "Read(~/notes/**)"], "deny": [String]()],
+    "statusLine": ["type": "command", "command": "~/bin/status.sh"],
+    "hooks": ["PermissionRequest": [userGroup("Bash")], "Stop": [userGroup("Stop")]],
+]
+let roundTrip = root + "/edits/round/settings.json"
+write("/edits/round/settings.json", json(settings))
+try! claudeHooks(roundTrip).install()
+check(claudeHooks(roundTrip).isInstalled && same(roundTrip + ".muster-original", settings), "installing keeps a copy of the original")
+try! claudeHooks(roundTrip).uninstall()
+check(same(roundTrip, settings), "install then uninstall leaves Claude's settings as they were")
+check(same(roundTrip + ".muster-original", settings) && (object(roundTrip + ".muster-backup") as NSDictionary) != (settings as NSDictionary)
+      && text(roundTrip + ".muster-backup").contains(tokenA),
+      "after two edits the original copy is still the original, and .muster-backup is the file before the last edit")
+try! claudeHooks(roundTrip).install()
+check(same(roundTrip + ".muster-original", settings), "and it stays the original after a third")
+
+let codexOriginal: [String: Any] = ["hooks": ["SessionStart": [["hooks": [["type": "command", "command": "/usr/bin/true", "timeout": 5]]]]]]
+let codexRound = root + "/edits/round/hooks.json"
+write("/edits/round/hooks.json", json(codexOriginal))
+try! Hooks(agent: .codex, path: codexRound, port: 47621, token: tokenA).install()
+try! Hooks(agent: .codex, path: codexRound, port: 47621, token: tokenA).uninstall()
+check(same(codexRound, codexOriginal), "install then uninstall leaves Codex's hooks as they were")
+
+let odd = root + "/edits/odd/settings.json"
+let oddSettings: [String: Any] = ["hooks": ["PreToolUse": [userGroup("Edit"), "a note"], "Notification": "not a list", "Stop": [String]()]]
+write("/edits/odd/settings.json", json(oddSettings))
+try! claudeHooks(odd).install()
+try! claudeHooks(odd).uninstall()
+check(same(odd, oddSettings), "hook entries Muster doesn't understand survive install and uninstall")
+let noHooks = root + "/edits/odd/plain.json"
+write("/edits/odd/plain.json", json(["model": "opus"]))
+try! claudeHooks(noHooks).install()
+try! claudeHooks(noHooks).uninstall()
+check(same(noHooks, ["model": "opus"]), "settings that had no hooks get none back")
+let earlier = root + "/edits/odd/upgraded.json"
+write("/edits/odd/upgraded.json.muster-backup", json(settings))
+write("/edits/odd/upgraded.json", text(roundTrip))
+try! claudeHooks(earlier).uninstall()
+check(same(earlier + ".muster-original", settings), "a backup from an earlier version becomes the original copy")
+
+let tidy = root + "/edits/tidy/settings.json"
+write("/edits/tidy/settings.json", "{\n    \"zeta\": 1,\n    \"alpha\": [1, 2]\n}\n")
+let tidyBefore = bytes(tidy)
+try! claudeHooks(tidy).uninstall()
+check(bytes(tidy) == tidyBefore && !fm.fileExists(atPath: tidy + ".muster-backup"), "an edit that changes nothing doesn't rewrite the file")
+let blank = root + "/edits/tidy/blank.json"
+write("/edits/tidy/blank.json", "  \n")
+check(failure { try claudeHooks(blank).install() } == nil && claudeHooks(blank).isInstalled, "an empty file counts as no settings yet")
+
+let dotfiles = root + "/edits/dotfiles/claude/settings.json"
+write("/edits/dotfiles/claude/settings.json", json(settings))
+let linked = root + "/edits/home/.claude/settings.json"
+try! fm.createDirectory(atPath: (linked as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+try! fm.createSymbolicLink(atPath: linked, withDestinationPath: "../../dotfiles/claude/settings.json")
+try! claudeHooks(linked).install()
+check(isLink(linked) && (try? fm.destinationOfSymbolicLink(atPath: linked)) == "../../dotfiles/claude/settings.json",
+      "a symlinked settings file stays a symlink")
+check(text(dotfiles).contains(tokenA) && claudeHooks(linked).isInstalled, "and the file it points to gets the hooks")
+check(!isLink(linked + ".muster-original") && same(linked + ".muster-original", settings), "the backups beside the link are real copies")
+try! claudeHooks(linked).uninstall()
+check(isLink(linked) && same(dotfiles, settings), "uninstalling through the link restores the target")
+let dangling = root + "/edits/home/.codex/hooks.json"
+try! fm.createDirectory(atPath: root + "/edits/dotfiles/codex", withIntermediateDirectories: true)
+try! fm.createDirectory(atPath: (dangling as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+try! fm.createSymbolicLink(atPath: dangling, withDestinationPath: root + "/edits/dotfiles/codex/hooks.json")
+try! Hooks(agent: .codex, path: dangling, port: 47621, token: tokenA).install()
+check(isLink(dangling) && text(root + "/edits/dotfiles/codex/hooks.json").contains(tokenA), "a link to a file not made yet gets that file")
+
+let secret = root + "/edits/private/settings.json"
+write("/edits/private/settings.json", json(settings))
+chmod(secret, 0o600)
+try! claudeHooks(secret).install()
+check(mode(secret) == 0o600, "a 0600 settings file stays 0600")
+check(mode(secret + ".muster-original") == 0o600 && mode(secret + ".muster-backup") == 0o600, "and so do its backups")
+let locked = root + "/edits/private/locked.json"
+write("/edits/private/locked.json", json(settings))
+chmod(locked, 0o444)
+let lockedBefore = bytes(locked)
+check(failure { try claudeHooks(locked).install() }?.contains("read-only") == true && bytes(locked) == lockedBefore && mode(locked) == 0o444,
+      "a read-only settings file is left alone, with a reason")
+
+let raced = root + "/edits/race/settings.json"
+write("/edits/race/settings.json", json(["model": "opus"]))
+var passes = 0
+try! SettingsFile.edit(raced) { d in
+    passes += 1
+    if passes == 1 { write("/edits/race/settings.json", json(["model": "opus", "theme": "dark"])) }
+    d["muster"] = true
+}
+check(passes == 2 && same(raced, ["model": "opus", "theme": "dark", "muster": true]),
+      "a change the agent writes mid-edit is kept, and the edit is redone on top")
+let busy = root + "/edits/race/busy.json"
+write("/edits/race/busy.json", json(["n": 0]))
+var writes = 0
+let busyError = failure {
+    try SettingsFile.edit(busy) { d in
+        writes += 1
+        write("/edits/race/busy.json", json(["n": writes]))
+        d["muster"] = true
+    }
+}
+check(busyError?.contains("kept changing") == true && same(busy, ["n": writes]), "a file that never settles is left alone, with a reason")
+
+let broken = root + "/edits/broken/settings.json"
+for (name, content) in [("invalid JSON", #"{"model": "opus""#), ("JSON with comments", "{\n  // mine\n  \"model\": \"opus\"\n}"),
+                        ("a list at the top", "[1, 2]"), ("hooks that aren't an object", #"{"hooks": [1]}"#),
+                        ("an event that isn't a list", #"{"hooks": {"PermissionRequest": {"matcher": "*"}}}"#)] {
+    write("/edits/broken/settings.json", content)
+    let message = failure { try claudeHooks(broken).install() }
+    check(message?.contains("left it alone") == true && text(broken) == content && !fm.fileExists(atPath: broken + ".muster-backup"),
+          "\(name) is left untouched, with a reason")
+}
+let strays = (fm.enumerator(atPath: root + "/edits")?.allObjects as? [String] ?? []).filter {
+    let name = ($0 as NSString).lastPathComponent
+    return name.hasPrefix(".") && name.contains(".muster-")
+}
+check(strays.isEmpty, "no half-written files are left behind")
+
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)
