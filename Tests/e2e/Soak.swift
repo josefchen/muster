@@ -310,6 +310,12 @@ func runSoak(bundle: String, minutes: Double) -> Never {
     let psAfter = psCPU(app.pid)
     let psUsed: Double? = psBefore.flatMap { before in psAfter.map { $0 - before } }
 
+    if let path = ProcessInfo.processInfo.environment["MUSTER_SOAK_SAMPLES"] {
+        // Every sample as CSV, for looking at the shape of a run rather than its summary.
+        let rows = samples.map { String(format: "%.1f,%.4f,%.3f", $0.t, $0.cpu, $0.footprint) }
+        try? (["seconds,cpu_seconds,footprint_mb"] + rows).joined(separator: "\n").write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
     section("Soak")
     guard app.alive, samples.count >= 3, let first = samples.first, let last = samples.last else {
         check(false, "the app stays up for the whole soak", app.exitDescription)
@@ -323,6 +329,9 @@ func runSoak(bundle: String, minutes: Double) -> Never {
     let quarter = max(1, samples.count / 4)
     let growth = median(Array(foot.suffix(quarter))) - median(Array(foot.prefix(quarter)))
     let (slope, r2) = trend(samples)
+    // Start-up settling looks like growth in a short run; a 30-minute run stays flat
+    // after its first minute. So growth is only judged on runs of 5 minutes or more.
+    let judged = minutes >= 5
     let steady = slope > 0.25 && r2 > 0.5 && growth > 1
     let finalState = app.state()
 
@@ -332,13 +341,14 @@ func runSoak(bundle: String, minutes: Double) -> Never {
     print(String(format: "  CPU, one core      avg %.2f %%   peak %.1f %%            avg ≤ %.1f %%", avg, peakCPU, Soak.cpuLimit))
     print(String(format: "  Footprint          %.1f–%.1f MB, avg %.1f            ≤ %.0f MB", foot.min() ?? 0, foot.max() ?? 0,
                  foot.reduce(0, +) / Double(foot.count), Soak.footprintLimit))
-    print(String(format: "  Footprint trend    %+.2f MB/min, R² %.2f, %+.1f MB    no steady growth", slope, r2, growth))
+    print(String(format: "  Footprint trend    %+.2f MB/min, R² %.2f, %+.1f MB    %@", slope, r2, growth,
+                 judged ? "no steady growth" : "not judged under 5 min"))
     if let psUsed {
         print(String(format: "  (cross-check: ps counts %.2f s of CPU over the run, proc_pid_rusage %.2f s)", psUsed, last.cpu - first.cpu))
     }
     check(avg <= Soak.cpuLimit, "average CPU stays at or under \(Soak.cpuLimit) % of one core", String(format: "%.2f %%", avg))
     check((foot.max() ?? 0) <= Soak.footprintLimit, "the footprint stays under \(Int(Soak.footprintLimit)) MB", String(format: "max %.1f MB", foot.max() ?? 0))
-    check(!steady, "the footprint doesn't grow steadily", String(format: "%+.2f MB/min", slope))
+    if judged { check(!steady, "the footprint doesn't grow steadily", String(format: "%+.2f MB/min", slope)) }
     check(finalState?.sessions.count == 11, "all 11 sessions are still listed at the end")
     app.stop()
     wipeDefaults()
