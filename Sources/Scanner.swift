@@ -113,6 +113,71 @@ func list(_ dir: String) -> [String] {
 
 // MARK: - Token usage
 
+/// Reads complete lines through one reused buffer: allocating a fresh chunk per
+/// read leaves the allocator caching freed megabytes.
+final class LineReader {
+    private static let baseCapacity = 1 << 20
+    private var buffer = malloc(baseCapacity)!
+    private var capacity = baseCapacity
+
+    deinit { free(buffer) }
+
+    /// Each complete line from `offset` on, without its newline. Returns the offset
+    /// after the last newline, so a line still being written is read next time.
+    /// Lines longer than `maxLine` are skipped without being buffered whole.
+    func read(_ path: String, from offset: UInt64, maxLine: Int = .max,
+              _ body: (UnsafeRawBufferPointer) -> Void) -> UInt64 {
+        var offset = offset
+        let fd = open(path, O_RDONLY)
+        guard fd >= 0 else { return offset }
+        defer { close(fd) }
+        lseek(fd, off_t(offset), SEEK_SET)
+        var filled = 0
+        var skipping = false
+        var skipped: UInt64 = 0
+        while true {
+            if filled == capacity {
+                if capacity >= maxLine {
+                    skipping = true
+                    skipped += UInt64(filled)
+                    filled = 0
+                } else {
+                    grow()
+                }
+            }
+            let n = Darwin.read(fd, buffer + filled, capacity - filled)
+            if n <= 0 { break }
+            filled += n
+            var start = 0
+            while start < filled, let nl = memchr(buffer + start, 0x0A, filled - start) {
+                let end = buffer.distance(to: nl)
+                if skipping { skipping = false } else { body(UnsafeRawBufferPointer(start: buffer + start, count: end - start)) }
+                start = end + 1
+            }
+            if start > 0 {
+                offset += skipped + UInt64(start)
+                skipped = 0
+            }
+            memmove(buffer, buffer + start, filled - start)
+            filled -= start
+        }
+        if capacity > 4 * Self.baseCapacity { shrink() }
+        return offset
+    }
+
+    /// realloc can extend in place, so a long line never holds two buffers at once.
+    private func grow() {
+        capacity *= 2
+        buffer = realloc(buffer, capacity)!
+    }
+
+    private func shrink() {
+        free(buffer)
+        buffer = malloc(Self.baseCapacity)!
+        capacity = Self.baseCapacity
+    }
+}
+
 /// Running token totals for append-only transcripts, per model. Each call reads
 /// only the lines added since the last one (transcripts reach hundreds of MB) and
 /// decodes nothing: numbers are read straight from the bytes, messages are keyed
@@ -125,72 +190,42 @@ final class UsageTally {
     private var perMessage: [String: [UInt64: Entry]] = [:]
     private var models: [String] = []
     private var modelIndex: [UInt64: UInt16] = [:]
-    private static let baseCapacity = 1 << 20
-    private var buffer = UnsafeMutableRawPointer.allocate(byteCount: baseCapacity, alignment: 16)
-    private var capacity = baseCapacity
+    private let reader = LineReader()
 
-    deinit { buffer.deallocate() }
-
-    /// Usage by model for a Claude transcript. Reads through one reused buffer:
-    /// allocating a fresh chunk per read leaves the allocator caching freed megabytes.
+    /// Usage by model for a Claude transcript.
     func claude(_ path: String) -> [String: Usage] {
         var entries = perMessage[path] ?? [:]
-        var offset = offsets[path] ?? 0
-        let fd = open(path, O_RDONLY)
-        if fd >= 0 {
-            defer { close(fd) }
-            lseek(fd, off_t(offset), SEEK_SET)
-            var filled = 0
-            while true {
-                if filled == capacity { grow() }
-                let n = read(fd, buffer + filled, capacity - filled)
-                if n <= 0 { break }
-                filled += n
-                var start = 0
-                while start < filled, let nl = memchr(buffer + start, 0x0A, filled - start) {
-                    let end = buffer.distance(to: nl)
-                    let line = UnsafeRawBufferPointer(start: buffer + start, count: end - start)
-                    if let hit = claudeLine(line) { entries[hit.0] = hit.1 }
-                    start = end + 1
-                }
-                offset += UInt64(start)
-                memmove(buffer, buffer + start, filled - start)
-                filled -= start
-            }
-            if capacity > 4 * Self.baseCapacity { shrink() }
+        offsets[path] = reader.read(path, from: offsets[path] ?? 0) { line in
+            if let hit = claudeLine(line) { entries[hit.0] = hit.1 }
         }
-        offsets[path] = offset
         perMessage[path] = entries
         var byModel: [String: Usage] = [:]
         for e in entries.values { byModel[models[Int(e.model)], default: Usage()] += e.usage }
         return byModel
     }
 
-    private func grow() {
-        let bigger = UnsafeMutableRawPointer.allocate(byteCount: capacity * 2, alignment: 16)
-        bigger.copyMemory(from: buffer, byteCount: capacity)
-        buffer.deallocate()
-        buffer = bigger
-        capacity *= 2
+    /// An assistant line's message id hash and usage. Claude writes one line per
+    /// content block, each repeating the message's usage.
+    static func message(_ line: UnsafeRawBufferPointer) -> (id: UInt64, usage: Usage)? {
+        guard find(line, usageKey) != nil,
+              find(line, assistantKey) != nil || find(line, assistantKeySpaced) != nil,
+              let id = hashValue(line, after: idKeys), let usage = usage(line) else { return nil }
+        return (id, usage)
     }
 
-    private func shrink() {
-        buffer.deallocate()
-        buffer = UnsafeMutableRawPointer.allocate(byteCount: Self.baseCapacity, alignment: 16)
-        capacity = Self.baseCapacity
+    /// The hash and byte range of the message's model id.
+    static func model(_ line: UnsafeRawBufferPointer) -> (UInt64, Range<Int>)? {
+        quoted(line, after: modelKeys)
     }
 
-    /// Claude writes one line per content block, each repeating the message's usage.
     private func claudeLine(_ line: UnsafeRawBufferPointer) -> (UInt64, Entry)? {
-        guard Self.find(line, Self.usageKey) != nil,
-              Self.find(line, Self.assistantKey) != nil || Self.find(line, Self.assistantKeySpaced) != nil,
-              let id = Self.hashValue(line, after: Self.idKeys), let usage = Self.usage(line) else { return nil }
-        return (id, Entry(model: model(line), usage: usage))
+        guard let hit = Self.message(line) else { return nil }
+        return (hit.id, Entry(model: model(line), usage: hit.usage))
     }
 
     /// The message's model, interned: the string is only created the first time.
     private func model(_ line: UnsafeRawBufferPointer) -> UInt16 {
-        guard let (hash, range) = Self.quoted(line, after: Self.modelKeys) else { return internModel("unknown", hash: 0) }
+        guard let (hash, range) = Self.model(line) else { return internModel("unknown", hash: 0) }
         if let i = modelIndex[hash] { return i }
         return internModel(String(decoding: UnsafeRawBufferPointer(rebasing: line[range]), as: UTF8.self), hash: hash)
     }
@@ -209,16 +244,39 @@ final class UsageTally {
     private static let idKeys = [Array("\"id\":\"msg_".utf8), Array("\"id\": \"msg_".utf8)]
     private static let modelKeys = [Array("\"model\":\"".utf8), Array("\"model\": \"".utf8)]
 
+    /// First index of `needle` in `hay[from..<to]`. Compares 16 positions at a time
+    /// on two of the needle's bytes, then confirms candidates: libc's memmem is
+    /// byte-at-a-time and dominated scans of multi-GB transcript folders. The anchors
+    /// skip the first and last byte, which in JSON keys are quotes and match often.
     static func find(_ hay: UnsafeRawBufferPointer, _ needle: [UInt8], from: Int = 0, to: Int? = nil) -> Int? {
         let end = to ?? hay.count
-        guard let base = hay.baseAddress, end - from >= needle.count else { return nil }
-        return needle.withUnsafeBytes { n in
-            memmem(base + from, end - from, n.baseAddress, needle.count).map { base.distance(to: $0) }
+        let k = needle.count
+        guard let base = hay.baseAddress, k > 0, end - from >= k else { return nil }
+        let a1 = k > 2 ? 1 : 0, a2 = k > 3 ? k - 2 : k - 1
+        let last = end - k
+        return needle.withUnsafeBytes { n -> Int? in
+            let nb = n.baseAddress!
+            let first = SIMD16<UInt8>(repeating: needle[a1]), second = SIMD16<UInt8>(repeating: needle[a2])
+            var i = from
+            while i + 15 <= last {
+                let x = (base + i + a1).loadUnaligned(as: SIMD16<UInt8>.self)
+                let y = (base + i + a2).loadUnaligned(as: SIMD16<UInt8>.self)
+                let hits = (x .== first) .& (y .== second)
+                if any(hits) {
+                    for j in 0..<16 where hits[j] && memcmp(base + i + j, nb, k) == 0 { return i + j }
+                }
+                i += 16
+            }
+            while i <= last {
+                if memcmp(base + i, nb, k) == 0 { return i }
+                i += 1
+            }
+            return nil
         }
     }
 
     /// FNV-1a of the quoted value following the first matching key, and its range.
-    private static func quoted(_ line: UnsafeRawBufferPointer, after keys: [[UInt8]]) -> (UInt64, Range<Int>)? {
+    static func quoted(_ line: UnsafeRawBufferPointer, after keys: [[UInt8]]) -> (UInt64, Range<Int>)? {
         for key in keys {
             guard let at = find(line, key) else { continue }
             var h: UInt64 = 0xcbf29ce484222325
@@ -289,7 +347,7 @@ final class UsageTally {
     private static let oneHourKey = Array("\"ephemeral_1h_input_tokens\"".utf8)
 
     /// `: 123` after a key, returning the value and the index after it.
-    private static func integer(_ line: UnsafeRawBufferPointer, after start: Int) -> (Int, Int)? {
+    static func integer(_ line: UnsafeRawBufferPointer, after start: Int) -> (Int, Int)? {
         var j = start
         while j < line.count, line[j] == 0x20 { j += 1 }
         guard j < line.count, line[j] == 0x3A else { return nil }

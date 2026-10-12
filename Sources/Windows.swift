@@ -8,11 +8,30 @@ import UserNotifications
 
 final class Windows {
     private var settingsWindow: NSWindow?
+    private var usage: (window: NSWindow, model: UsageModel, closing: NSObjectProtocol)?
 
     func show() {
         let w = settingsWindow ?? window("Muster Settings", SettingsView(), size: NSSize(width: 460, height: 560))
         settingsWindow = w
         present(w)
+    }
+
+    /// Scans while open; closing stops the scan and lets the window and its data go.
+    func showUsage() {
+        if let usage { return present(usage.window) }
+        let model = UsageModel()
+        let w = window("Usage", UsageView(model: model), size: NSSize(width: 540, height: 760))
+        let closing = NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { [weak self] _ in
+            guard let self, let usage = self.usage else { return }
+            usage.model.stop()
+            NotificationCenter.default.removeObserver(usage.closing)
+            usage.window.contentView = nil
+            self.usage = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { malloc_zone_pressure_relief(nil, 0) }
+        }
+        usage = (w, model, closing)
+        present(w)
+        model.start()
     }
 
     private func window<V: View>(_ title: String, _ view: V, size: NSSize) -> NSWindow {

@@ -35,6 +35,7 @@ final class StatusItem: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var onClick: ((NSRect?) -> Void)?
     var onSettings: (() -> Void)?
+    var onUsage: (() -> Void)?
     var onTour: (() -> Void)?
     private var callout: GlassPanel?
 
@@ -88,6 +89,7 @@ final class StatusItem: NSObject {
             menu.addItem(withTitle: "About Muster", action: #selector(about), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Welcome Tour…", action: #selector(tour), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Usage…", action: #selector(usage), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
             menu.addItem(.separator())
             menu.addItem(withTitle: "Quit Muster", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -101,6 +103,7 @@ final class StatusItem: NSObject {
     }
 
     @objc private func settings() { onSettings?() }
+    @objc private func usage() { onUsage?() }
     @objc private func tour() { onTour?() }
     @objc private func checkUpdates() { Updates.check(manual: true) }
 
@@ -319,6 +322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status = StatusItem()
         status.onClick = { [weak self] anchor in self?.deck.toggle(below: anchor) }
         status.onSettings = { [weak self] in self?.settings.show() }
+        status.onUsage = { [weak self] in self?.settings.showUsage() }
         deck.onSettings = { [weak self] in self?.settings.show() }
         welcome = Welcome(switcher: switcher, deck: deck) { [weak self] in self?.status.showCallout() }
         status.onTour = { [weak self] in self?.welcome.show() }
@@ -350,14 +354,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate {
-    /// muster://search, muster://settings, muster://welcome, muster://next (the most urgent session),
-    /// muster://open?id=claude:<session id>. For Raycast, Alfred and Shortcuts.
+    /// muster://search, muster://settings, muster://usage, muster://welcome, muster://next (the most
+    /// urgent session), muster://open?id=claude:<session id>. For Raycast, Alfred and Shortcuts.
     @objc func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URLComponents(string: text) else { return }
         switch url.host {
         case "search": deckToggle()
         case "settings": settings.show()
+        case "usage": settings.showUsage()
         case "welcome": welcome.show()
         case "next": if let s = Store.shared.sessions.first { Opener.open(s) }
         case "open":
