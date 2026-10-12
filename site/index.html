@@ -61,6 +61,9 @@
   .feature.flip .copy { order: 2; }
   .kicker { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 14px; }
   h2 { font-size: clamp(34px, 4.6vw, 52px); line-height: 1.05; letter-spacing: -.035em; font-weight: 700; }
+  .how { text-align: center; max-width: 660px; margin: 0 auto 44px; }
+  .how p { margin: 18px auto 0; color: var(--dim); font-size: 19px; }
+  #dispatch { max-width: 1040px; margin: 0 auto; }
   .copy p { margin-top: 18px; color: var(--dim); font-size: 19px; max-width: 420px; }
   kbd { font: 600 15px/1 -apple-system, system-ui, sans-serif; color: var(--fg); background: rgba(255,255,255,.08);
         border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; margin: 0 1px; }
@@ -166,6 +169,16 @@
     </video>
   </div>
 </div></section>
+
+<section id="how"><div class="wrap reveal">
+  <div class="how">
+    <div class="kicker" style="color:var(--claude)">How it works</div>
+    <h2>Nothing leaves your Mac.</h2>
+    <p>Muster reads the sessions your agents already save. When one asks, the question comes to Muster and your answer goes straight back. Try it: click the desk, <kbd>Tab</kbd> to select, <kbd>⌥</kbd><kbd>↩</kbd> to allow.</p>
+  </div>
+  <div id="dispatch"></div>
+</div></section>
+<script type="module" src="/figure/dispatch.js"></script>
 
 <section><div class="wrap">
   <div class="stats reveal">
