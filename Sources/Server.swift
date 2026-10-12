@@ -86,7 +86,7 @@ final class HookServer {
             switch HTTPRequest.parse(buffer) {
             case .complete(let request):
                 self.onRequest?(request, Exchange(connection: c))
-            case .partial where !done && error == nil && buffer.count < 4 << 20:
+            case .partial where !done && error == nil:
                 self.read(c, buffer)
             default:
                 c.cancel()

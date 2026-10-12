@@ -4,29 +4,58 @@ import Foundation
 // HTTP request, and adding or removing Muster's hooks in an agent's settings.
 // Answers.swift wires them to the server, the port and the token.
 
-/// A hook's request: a POST with a Content-Length JSON body.
+/// A hook's request: a POST with a Content-Length JSON body. Any local process
+/// can connect, and this runs before the token is checked, so every input must
+/// end in a request, a wait for more bytes, or a refusal.
 struct HTTPRequest {
     let path: String
+    /// Lowercased names. A repeated header's values are joined with ", ", so a
+    /// second token header can't stand in for the first.
     let headers: [String: String]
     let body: Data
 
     enum Parse { case complete(HTTPRequest), partial, invalid }
 
-    /// A complete request, or `.partial` while more bytes are needed.
+    /// A hook sends a few hundred bytes of headers and a JSON body.
+    static let maxHead = 16 << 10
+    static let maxBody = 4 << 20
+
     static func parse(_ data: Data) -> Parse {
-        guard let end = data.range(of: Data("\r\n\r\n".utf8)) else { return .partial }
-        let head = String(decoding: data[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
-        let parts = head.first?.split(separator: " ") ?? []
-        guard parts.count >= 2 else { return .partial }
-        var headers: [String: String] = [:]
-        for line in head.dropFirst() {
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+        let start = data.startIndex
+        let window = start..<(start + min(data.count, maxHead + 4))
+        guard let end = data.range(of: Data("\r\n\r\n".utf8), in: window) else {
+            return window.count < maxHead + 4 ? .partial : .invalid
         }
-        let length = Int(headers["content-length"] ?? "0") ?? 0
-        let bodyStart = end.upperBound
-        guard data.count - (bodyStart - data.startIndex) >= length else { return .partial }
-        return .complete(HTTPRequest(path: String(parts[1]), headers: headers, body: data[bodyStart..<(bodyStart + length)]))
+        let lines = String(decoding: data[start..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
+        let parts = lines[0].split(separator: " ", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[1].hasPrefix("/"), parts[2].hasPrefix("HTTP/") else { return .invalid }
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colon = line.firstIndex(of: ":") else { return .invalid }
+            let name = line[..<colon]
+            guard !name.isEmpty, !name.contains(where: { $0.isWhitespace }) else { return .invalid }
+            let key = name.lowercased()
+            let value = line[line.index(after: colon)...].trimmingCharacters(in: CharacterSet(charactersIn: " \t"))
+            if let seen = headers[key] {
+                guard key != "content-length" else {
+                    if seen == value { continue } else { return .invalid }
+                }
+                headers[key] = seen + ", " + value
+            } else {
+                headers[key] = value
+            }
+        }
+        // Hooks never stream; a chunked body would leave the length ambiguous.
+        guard headers["transfer-encoding"] == nil else { return .invalid }
+        var length = 0
+        if let text = headers["content-length"] {
+            guard (1...9).contains(text.utf8.count), text.utf8.allSatisfy({ (48...57).contains($0) }),
+                  let n = Int(text), n <= maxBody else { return .invalid }
+            length = n
+        }
+        guard data.endIndex - end.upperBound >= length else { return .partial }
+        let body = Data(data[end.upperBound..<(end.upperBound + length)])
+        return .complete(HTTPRequest(path: String(parts[1]), headers: headers, body: body))
     }
 }
 
