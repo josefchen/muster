@@ -9,96 +9,131 @@
 <meta property="og:description" content="See which Claude, Codex or Cursor session needs you, answer it from anywhere, and jump to it with ⌥Tab. Free and open source.">
 <meta property="og:image" content="/media/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="theme-color" content="#08080b">
-<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080b" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="/media/icon.png">
 <script>document.documentElement.classList.add('js')</script>
 <style>
   :root {
-    --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #55555d; --line: rgba(255,255,255,.08);
-    --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
+    --bg: #fbfbfd; --fg: #1d1d1f; --dim: #6e6e73; --faint: #8e8e93; --line: rgba(0,0,0,.08); --wire: rgba(0,0,0,.16);
+    --nav: rgba(251,251,253,.72); --pill: rgba(0,0,0,.06); --pill-hover: rgba(0,0,0,.1);
+    --btn: #1d1d1f; --btn-fg: #fff; --btn-hover: #000;
+    --glass: rgba(255,255,255,.72); --glass-edge: rgba(255,255,255,.9);
+    --cap-a: #ffffff; --cap-b: #f1f1f4; --cap-edge: rgba(0,0,0,.1);
+    --cap-shadow: inset 0 -1px 0 rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1), 0 10px 22px -10px rgba(0,0,0,.3);
+    --media-shadow: 0 50px 100px -40px rgba(40,20,80,.45), 0 0 0 1px rgba(0,0,0,.06);
+    --claude: #e07a1f; --codex: #3274f0; --cursor: #8a4ff0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #5c5c64; --line: rgba(255,255,255,.08); --wire: rgba(255,255,255,.16);
+      --nav: rgba(8,8,11,.72); --pill: rgba(255,255,255,.1); --pill-hover: rgba(255,255,255,.16);
+      --btn: #f5f5f7; --btn-fg: #000; --btn-hover: #fff;
+      --glass: rgba(255,255,255,.05); --glass-edge: rgba(255,255,255,.1);
+      --cap-a: #2b2b31; --cap-b: #1d1d22; --cap-edge: rgba(255,255,255,.06);
+      --cap-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 0 #000, 0 12px 24px -8px rgba(0,0,0,.7);
+      --media-shadow: 0 50px 110px -30px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.08);
+      --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
+    }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
   body { background: var(--bg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; overflow-x: hidden; }
   a { color: inherit; text-decoration: none; }
   img, video { display: block; max-width: 100%; height: auto; }
+  h1, h2 { text-wrap: balance; }
+  p { text-wrap: pretty; }
   .wrap { max-width: 1080px; margin: 0 auto; padding-inline: 24px; }
 
-  nav { position: fixed; inset: 0 0 auto; z-index: 10; backdrop-filter: saturate(180%) blur(20px);
-        -webkit-backdrop-filter: saturate(180%) blur(20px); background: rgba(8,8,11,.72); border-bottom: 1px solid var(--line); }
+  nav { position: fixed; inset: 0 0 auto; z-index: 10; background: var(--nav); border-bottom: 1px solid var(--line);
+        backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
   nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 52px; }
   .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -.01em; }
   .brand img { width: 24px; height: 24px; }
   nav .links { display: flex; gap: 22px; align-items: center; font-size: 14px; color: var(--dim); }
   nav .links a:hover { color: var(--fg); }
-  .pill { color: var(--fg) !important; background: rgba(255,255,255,.1); padding: 6px 14px; border-radius: 999px; }
-  .pill:hover { background: rgba(255,255,255,.16); }
+  .pill { color: var(--fg) !important; background: var(--pill); padding: 6px 14px; border-radius: 999px; }
+  .pill:hover { background: var(--pill-hover); }
 
   header { padding: 136px 0 0; text-align: center; }
-  .icon { width: 88px; height: 88px; margin: 0 auto 28px; filter: drop-shadow(0 18px 36px rgba(0,0,0,.55)); }
+  .icon { width: 88px; height: 88px; margin: 0 auto 28px; filter: drop-shadow(0 18px 30px rgba(0,0,0,.28)); }
   h1 { font-size: clamp(46px, 8vw, 88px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
   h1 span { background: linear-gradient(90deg, var(--claude), var(--cursor) 55%, var(--codex)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .lede { margin: 22px auto 0; max-width: 540px; font-size: 20px; line-height: 1.45; color: var(--dim); letter-spacing: -.01em; }
   .ctas { margin-top: 34px; display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
-  .btn { display: inline-flex; align-items: center; gap: 9px; background: var(--fg); color: #000; font-weight: 600;
+  .btn { display: inline-flex; align-items: center; gap: 9px; background: var(--btn); color: var(--btn-fg); font-weight: 600;
          padding: 13px 22px; border-radius: 14px; font-size: 16px; transition: transform .15s ease, background .15s ease; }
-  .btn:hover { transform: translateY(-1px); background: #fff; }
+  .btn:hover { transform: translateY(-1px); background: var(--btn-hover); }
   .btn svg { width: 16px; height: 19px; }
   .brew { display: inline-flex; align-items: center; gap: 12px; font: 13.5px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--dim);
-          border: 1px solid var(--line); padding: 15px 16px; border-radius: 14px; background: rgba(255,255,255,.03); cursor: pointer; }
+          border: 1px solid var(--line); padding: 15px 16px; border-radius: 14px; background: var(--glass); cursor: pointer; }
   .brew b { color: var(--fg); font-weight: 500; }
   .brew em { font-style: normal; color: var(--faint); min-width: 44px; text-align: right; }
-  .brew:hover { border-color: rgba(255,255,255,.18); }
+  .brew:hover { border-color: var(--wire); }
   .ghost { display: inline-flex; align-items: center; padding: 13px 22px; border-radius: 14px; font-size: 16px; font-weight: 600;
-           border: 1px solid var(--line); background: rgba(255,255,255,.04); }
-  .ghost:hover { border-color: rgba(255,255,255,.2); }
+           border: 1px solid var(--line); background: var(--glass); }
+  .ghost:hover { border-color: var(--wire); }
   .meta { margin-top: 18px; font-size: 13px; color: var(--faint); }
 
   .stage { position: relative; margin: 64px auto 0; max-width: 760px; }
-  .stage::before { content: ""; position: absolute; inset: 8% -18% -6%; z-index: -1; pointer-events: none; filter: blur(60px); opacity: .45;
-                   background: radial-gradient(40% 45% at 25% 40%, var(--cursor), transparent 70%),
-                               radial-gradient(35% 40% at 75% 30%, var(--claude), transparent 70%),
-                               radial-gradient(45% 45% at 60% 75%, var(--codex), transparent 70%); }
-  .frame { border-radius: 22px; overflow: hidden; background: #1a1424;
-           box-shadow: 0 50px 110px -30px rgba(0,0,0,.85), 0 0 0 1px var(--line); }
+  .frame { border-radius: 22px; overflow: hidden; background: #2a1a3a; box-shadow: var(--media-shadow); }
 
   .caps { display: flex; justify-content: center; gap: 8px; margin-bottom: 28px; }
   .split .caps { justify-content: flex-start; }
   .cap { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; height: 54px; padding: 0 15px;
          border-radius: 12px; font: 500 20px/1 -apple-system, system-ui, sans-serif; color: var(--fg);
-         background: linear-gradient(180deg, #2b2b31, #1d1d22); border: 1px solid rgba(255,255,255,.06);
-         box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 0 #000, 0 12px 24px -8px rgba(0,0,0,.7); }
+         background: linear-gradient(180deg, var(--cap-a), var(--cap-b)); border: 1px solid var(--cap-edge); box-shadow: var(--cap-shadow); }
   .cap.wide { min-width: 120px; font-size: 15px; }
   .howto { margin: 44px auto 0; text-align: center; }
   .howto .caps { margin-bottom: 18px; }
   .howto .cap { min-width: 44px; height: 44px; font-size: 17px; padding: 0 12px; border-radius: 10px; }
   .howto p { color: var(--dim); font-size: 17px; }
-  h1, h2 { text-wrap: balance; }
-  p { text-wrap: pretty; }
 
   section { padding-top: 168px; }
   h2 { font-size: clamp(34px, 5vw, 56px); line-height: 1.04; letter-spacing: -.038em; font-weight: 700; }
   .center { text-align: center; }
-  .center > p { margin: 20px auto 0; max-width: 600px; color: var(--dim); font-size: 19px; }
-  .note { margin-top: 26px; font-size: 13px; color: var(--faint); }
-  .alert { margin: 56px auto 0; max-width: 860px; border-radius: 26px; overflow: hidden;
-           box-shadow: 0 40px 90px -30px rgba(0,0,0,.8), 0 0 0 1px var(--line); }
+  .center p { margin: 20px auto 0; max-width: 600px; color: var(--dim); font-size: 19px; }
+  .note { margin-top: 26px; font-size: 14px !important; color: var(--faint) !important; }
+  .alert { margin: 56px auto 0; max-width: 860px; border-radius: 26px; overflow: hidden; box-shadow: var(--media-shadow); }
 
   .split { display: grid; grid-template-columns: 1fr 1.15fr; gap: 72px; align-items: center; }
   .split .copy p { margin-top: 20px; color: var(--dim); font-size: 19px; max-width: 420px; }
   .split .frame { border-radius: 18px; }
-  kbd { font: 600 14px/1 -apple-system, system-ui, sans-serif; color: var(--fg); background: rgba(255,255,255,.08);
+  kbd { font: 600 14px/1 -apple-system, system-ui, sans-serif; color: var(--fg); background: var(--pill);
         border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 3px 7px; margin: 0 1px; white-space: nowrap; }
 
-  #dispatch { max-width: 900px; margin: 48px auto 0; }
-  #dispatch .iso-legend, #dispatch .iso-plate-corner:nth-child(-n+2) { display: none; }
+  .appearance { margin: 56px auto 0; max-width: 820px; border-radius: 24px; overflow: hidden; box-shadow: var(--media-shadow); }
+  .details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px 48px; margin: 88px auto 0; max-width: 960px; text-align: left; }
+  .details h3 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .details p { margin: 6px 0 0; max-width: none; color: var(--dim); font-size: 15px; line-height: 1.45; }
+  code { font: 13.5px/1 ui-monospace, "SF Mono", Menlo, monospace; }
 
-  .facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .facts div { padding: 44px 10px; text-align: center; }
-  .facts div + div { border-left: 1px solid var(--line); }
-  .facts b { display: block; font-size: 38px; letter-spacing: -.03em; font-weight: 700; }
-  .facts span { color: var(--dim); font-size: 14px; }
+  .diagram { position: relative; margin: 64px auto 0; max-width: 880px; padding: 52px 44px 50px; border: 1px solid var(--wire);
+             border-radius: 30px; background: var(--glass); }
+  .scope { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); padding: 3px 12px; border-radius: 999px;
+           background: var(--bg); border: 1px solid var(--wire); font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--dim); white-space: nowrap; }
+  .flow { display: grid; grid-template-columns: 200px 1fr 150px; align-items: center; }
+  .agents { display: grid; gap: 10px; }
+  .chip { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-radius: 14px; font-weight: 600; font-size: 15px;
+          background: var(--glass); border: 1px solid var(--glass-edge); box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 20px -12px rgba(0,0,0,.25);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+  .chip i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .wires { display: grid; gap: 46px; padding: 0 22px; }
+  .wire { position: relative; height: 2px; border-radius: 2px; background: var(--wire); }
+  .wire::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left: 7px solid var(--wire); border-right: 0; }
+  .wire.both::before { content: ""; position: absolute; left: -1px; top: -4px; border: 5px solid transparent; border-right: 7px solid var(--wire); border-left: 0; }
+  .wire b { position: absolute; top: -3px; left: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--claude);
+            box-shadow: 0 0 10px var(--claude); opacity: 0; }
+  .wire span { position: absolute; left: 0; right: 0; top: 14px; text-align: center; font-size: 13px; color: var(--dim); }
+  .js .diagram.in .wire b { animation: run 2.6s cubic-bezier(.5,0,.5,1) infinite; }
+  .js .diagram.in .wire b.back { animation-name: back; animation-delay: 1.3s; }
+  .js .diagram.in .wire.files b { background: var(--fg); box-shadow: none; animation-duration: 3.4s; }
+  @keyframes run { 0% { left: 0; opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { left: calc(100% - 8px); opacity: 0; } }
+  @keyframes back { 0% { left: calc(100% - 8px); opacity: 0; } 12% { opacity: 1; } 88% { opacity: 1; } 100% { left: 0; opacity: 0; } }
+  .wires .label { display: none; margin: 0; max-width: none; font-size: 14px; }
+  .app { display: grid; justify-items: center; gap: 12px; font-weight: 600; font-size: 15px; }
+  .app img { width: 84px; height: 84px; filter: drop-shadow(0 14px 24px rgba(0,0,0,.25)); }
 
   .closer { text-align: center; padding: 168px 0 128px; }
   .closer .icon { width: 72px; height: 72px; margin-bottom: 26px; }
@@ -114,6 +149,12 @@
     header { padding-top: 112px; }
     section { padding-top: 120px; }
     .split { grid-template-columns: 1fr; gap: 36px; }
+    .details { grid-template-columns: 1fr 1fr; gap: 32px 28px; margin-top: 64px; }
+    .flow { grid-template-columns: 1fr; justify-items: center; }
+    .agents { grid-auto-flow: column; }
+    .wires { padding: 26px 0; }
+    .wire { display: none; }
+    .wires .label { display: block; }
     .closer { padding: 120px 0 96px; }
   }
   @media (max-width: 560px) {
@@ -121,12 +162,15 @@
     .lede { font-size: 18px; }
     .brew { font-size: 12px; padding: 14px 12px; gap: 8px; }
     .brew em { display: none; }
-    .facts div { padding: 28px 4px; }
-    .facts b { font-size: 28px; }
-    .facts span { font-size: 12px; }
-    .alert { border-radius: 16px; }
+    .alert, .appearance { border-radius: 16px; }
+    .details { grid-template-columns: 1fr; }
+    .diagram { padding: 40px 16px 28px; }
+    .agents { grid-auto-flow: row; }
   }
-  @media (prefers-reduced-motion: reduce) { .js .reveal { opacity: 1; transform: none; transition: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .js .reveal { opacity: 1; transform: none; transition: none; }
+    .js .diagram.in .wire b { animation: none; }
+  }
 </style>
 </head>
 <body>
@@ -172,7 +216,7 @@
   <h2>Answer without switching.</h2>
   <p>When an agent wants to run a command, the request shows up at the top of whichever screen you're on. Allow it from there, or deny it with <kbd>⌥</kbd><kbd>⌫</kbd>. Questions and plan approvals work the same way.</p>
   <div class="alert"><img src="/media/alert.jpg" width="1240" height="260" alt="Muster's alert: Claude wants to run npm run migrate, with Allow and Deny shortcuts" loading="lazy"></div>
-  <p class="note">Works with Claude Code and Codex once you turn it on.</p>
+  <p class="note">For Claude Code and Codex, once you turn it on. If Muster isn't running, the agent asks the usual way.</p>
 </section>
 
 <section class="wrap split reveal">
@@ -191,18 +235,40 @@
   </div>
 </section>
 
+<section class="wrap center">
+  <div class="reveal">
+    <h2>Made for the Mac.</h2>
+    <p>Muster is a 2 MB AppKit app. It uses the system's own glass and follows your light or dark appearance.</p>
+    <div class="appearance"><img src="/media/appearance.jpg" width="1400" height="1160" alt="The switcher, half in dark mode and half in light mode" loading="lazy"></div>
+  </div>
+  <div class="details reveal">
+    <div><h3>Opens the right window</h3><p>Claude's app, the Codex thread, Cursor's Agents window, or the terminal a CLI session runs in.</p></div>
+    <div><h3>Remote sessions too</h3><p>Claude Code sessions that the desktop app runs over SSH show up next to your local ones.</p></div>
+    <div><h3>Answers on the banner</h3><p>Notifications carry Allow and Deny, or the options to a question.</p></div>
+    <div><h3>Your shortcuts</h3><p>Change ⌥Tab and ⌃⌥Space. Muster tells you if another app already uses one.</p></div>
+    <div><h3>Raycast and Alfred</h3><p><code>muster://next</code> opens the session that needs you most. <code>muster://search</code> opens search.</p></div>
+    <div><h3>Unread until you look</h3><p>A finished session stays marked until you open it.</p></div>
+  </div>
+</section>
+
 <section class="wrap center reveal" id="how">
   <h2>Nothing leaves your Mac.</h2>
   <p>Muster reads the session files your agents already write. An agent's question reaches Muster over localhost, and your answer goes back the same way. There's no account and no analytics, and the update check stays off until you turn it on.</p>
-  <div id="dispatch"></div>
-</section>
-<script type="module" src="/figure/dispatch.js"></script>
-
-<section class="wrap">
-  <div class="facts reveal">
-    <div><b>2 MB</b><span>the whole app</span></div>
-    <div><b>0</b><span>accounts or analytics</span></div>
-    <div><b>MIT</b><span>open source</span></div>
+  <div class="diagram" role="img" aria-label="Claude Code, Codex and Cursor on your Mac. Muster reads their session files, and questions and answers travel between them over 127.0.0.1.">
+    <div class="scope">Your Mac</div>
+    <div class="flow">
+      <div class="agents">
+        <div class="chip"><i style="background:var(--claude)"></i>Claude Code</div>
+        <div class="chip"><i style="background:var(--codex)"></i>Codex</div>
+        <div class="chip"><i style="background:var(--cursor)"></i>Cursor</div>
+      </div>
+      <div class="wires">
+        <div class="wire files"><b></b><span>session files, read only</span></div>
+        <div class="wire both"><b></b><b class="back"></b><span>questions and answers on 127.0.0.1</span></div>
+        <p class="label">Muster reads their session files.<br>Questions and answers stay on 127.0.0.1.</p>
+      </div>
+      <div class="app"><img src="/media/icon.png" alt="">Muster</div>
+    </div>
   </div>
 </section>
 
@@ -227,7 +293,7 @@
     e.target.classList.add('in');
     io.unobserve(e.target);
   }), { threshold: .12 });
-  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+  document.querySelectorAll('.reveal, .diagram').forEach(el => io.observe(el));
 
   // Videos play only while on screen, and not at all with reduced motion.
   const vio = new IntersectionObserver(entries => entries.forEach(e => {
