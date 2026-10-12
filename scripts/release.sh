@@ -22,6 +22,10 @@ if [ -z "$IDENTITY" ] && [ -z "${ADHOC:-}" ]; then
   echo "or run with ADHOC=1 for an unsigned build that Gatekeeper will warn about." >&2
   exit 1
 fi
+if [ -n "$IDENTITY" ] && ! xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1; then
+  echo "No notarization credentials in the \"$PROFILE\" keychain profile. See the setup notes at the top of this script." >&2
+  exit 1
+fi
 
 rm -rf "$OUT" && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 for arch in arm64 x86_64; do
