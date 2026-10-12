@@ -165,7 +165,7 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         empty.frame = NSRect(x: 0, y: top + 72, width: size.width, height: 20)
         empty.isHidden = !shown.isEmpty
         emptyIcon.isHidden = !shown.isEmpty
-        set(empty, Store.shared.sessions.isEmpty ? "All quiet. No agents in the last 3 hours." : "No sessions match")
+        set(empty, Store.shared.sessions.isEmpty ? "No agent sessions in the last 3 hours." : "No sessions match")
         footer.frame = NSRect(x: 24, y: size.height - 26, width: size.width - 80, height: 14)
         gear.frame = NSRect(x: size.width - 40, y: size.height - 31, width: 20, height: 20)
     }

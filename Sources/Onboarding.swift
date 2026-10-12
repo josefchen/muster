@@ -337,7 +337,7 @@ private struct AgentsPage: View {
     var body: some View {
         VStack(spacing: 26) {
             Spacer(minLength: 24)
-            Header(title: "Your agents", subtitle: "Muster reads the sessions they already save on this Mac. Nothing to connect.")
+            Header(title: "Your agents", subtitle: "Muster reads the sessions they already save on this Mac, so there's nothing to connect.")
             Card {
                 ForEach(Array(Agent.allCases.enumerated()), id: \.element) { i, agent in
                     if i > 0 { Divider().padding(.leading, 62) }
@@ -346,10 +346,10 @@ private struct AgentsPage: View {
             }
             .frame(width: 440)
             if Agent.allCases.allSatisfy({ !model.installed($0) }), !model.sources.isEmpty {
-                Text("None yet. Muster lights up the moment you start one.")
+                Text("None yet. Your sessions show up here as soon as you start one.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-            Label("Read-only. Nothing leaves your Mac.", systemImage: "lock.fill")
+            Label("Muster only reads these files, and nothing leaves your Mac.", systemImage: "lock.fill")
                 .font(.callout).foregroundStyle(.secondary)
             Spacer(minLength: 24)
         }
@@ -639,7 +639,7 @@ private struct NotifyPage: View {
     var body: some View {
         VStack(spacing: 26) {
             Spacer(minLength: 24)
-            Header(title: "Stay in the loop", subtitle: "A quiet heads-up when an agent needs you. Nothing else.")
+            Header(title: "Stay in the loop", subtitle: "Muster notifies you when an agent needs you and stays quiet otherwise.")
             Card {
                 HStack(spacing: 14) {
                     icon("bell.badge.fill", .red)
