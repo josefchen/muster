@@ -4,207 +4,246 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Muster: every agent, one glance</title>
-<meta name="description" content="A native Mac menu bar app for Claude, Codex and Cursor. See who needs you, answer from anywhere, ⌥Tab between agents, and know what they cost.">
+<meta name="description" content="A Mac menu bar app that shows which Claude, Codex or Cursor session needs you and takes you to it with ⌥Tab. Free and open source.">
 <meta property="og:title" content="Muster: every agent, one glance">
-<meta property="og:description" content="A native Mac switcher for your Claude, Codex and Cursor sessions. Free and open source.">
+<meta property="og:description" content="See which Claude, Codex or Cursor session needs you, answer it from anywhere, and jump to it with ⌥Tab. Free and open source.">
 <meta property="og:image" content="/media/social-preview.png">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#08080b">
+<meta name="color-scheme" content="dark">
 <link rel="icon" href="/media/icon.png">
+<script>document.documentElement.classList.add('js')</script>
 <style>
   :root {
-    --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #4a4a52; --line: rgba(255,255,255,.08);
+    --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #55555d; --line: rgba(255,255,255,.08);
     --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
-  body { font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; overflow-x: hidden; }
+  body { background: var(--bg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; overflow-x: hidden; }
   a { color: inherit; text-decoration: none; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+  img, video { display: block; max-width: 100%; height: auto; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding-inline: 24px; }
 
   nav { position: fixed; inset: 0 0 auto; z-index: 10; backdrop-filter: saturate(180%) blur(20px);
-        -webkit-backdrop-filter: saturate(180%) blur(20px); background: rgba(8,8,11,.6); border-bottom: 1px solid var(--line); }
-  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
-  .brand img { width: 26px; height: 26px; }
-  nav .links { display: flex; gap: 26px; align-items: center; font-size: 14px; color: var(--dim); }
+        -webkit-backdrop-filter: saturate(180%) blur(20px); background: rgba(8,8,11,.72); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 52px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -.01em; }
+  .brand img { width: 24px; height: 24px; }
+  nav .links { display: flex; gap: 22px; align-items: center; font-size: 14px; color: var(--dim); }
   nav .links a:hover { color: var(--fg); }
-  .pill { color: var(--fg) !important; background: rgba(255,255,255,.1); padding: 7px 14px; border-radius: 999px; }
+  .pill { color: var(--fg) !important; background: rgba(255,255,255,.1); padding: 6px 14px; border-radius: 999px; }
+  .pill:hover { background: rgba(255,255,255,.16); }
 
-  header { position: relative; padding: 150px 0 40px; text-align: center; }
-  .glow { position: absolute; inset: -10% 0 auto; height: 900px; z-index: -1; pointer-events: none;
-          background: radial-gradient(40% 35% at 30% 30%, rgba(158,102,250,.28), transparent 70%),
-                      radial-gradient(35% 30% at 70% 25%, rgba(238,140,51,.22), transparent 70%),
-                      radial-gradient(45% 35% at 55% 55%, rgba(69,133,250,.22), transparent 70%); filter: blur(10px); }
-  .icon { width: 96px; height: 96px; margin-bottom: 30px; filter: drop-shadow(0 20px 40px rgba(0,0,0,.5)); }
-  h1 { font-size: clamp(48px, 8vw, 92px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
+  header { padding: 136px 0 0; text-align: center; }
+  .icon { width: 88px; height: 88px; margin: 0 auto 28px; filter: drop-shadow(0 18px 36px rgba(0,0,0,.55)); }
+  h1 { font-size: clamp(46px, 8vw, 88px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
   h1 span { background: linear-gradient(90deg, var(--claude), var(--cursor) 55%, var(--codex)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .lede { margin: 22px auto 0; max-width: 560px; font-size: 21px; color: var(--dim); letter-spacing: -.01em; }
-  .ctas { margin-top: 36px; display: flex; gap: 14px; justify-content: center; align-items: center; flex-wrap: wrap; }
-  .btn { display: inline-flex; align-items: center; gap: 10px; background: var(--fg); color: #000; font-weight: 600;
-         padding: 14px 24px; border-radius: 14px; font-size: 16px; transition: transform .15s ease; }
-  .btn:hover { transform: translateY(-1px); }
-  .btn svg { width: 17px; height: 17px; }
-  .brew { display: inline-flex; align-items: center; gap: 12px; font: 14px/1 ui-monospace, "SF Mono", Menlo, monospace;
-          color: var(--dim); border: 1px solid var(--line); padding: 15px 18px; border-radius: 14px; cursor: pointer; background: rgba(255,255,255,.03); }
+  .lede { margin: 22px auto 0; max-width: 540px; font-size: 20px; line-height: 1.45; color: var(--dim); letter-spacing: -.01em; }
+  .ctas { margin-top: 34px; display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 9px; background: var(--fg); color: #000; font-weight: 600;
+         padding: 13px 22px; border-radius: 14px; font-size: 16px; transition: transform .15s ease, background .15s ease; }
+  .btn:hover { transform: translateY(-1px); background: #fff; }
+  .btn svg { width: 16px; height: 19px; }
+  .brew { display: inline-flex; align-items: center; gap: 12px; font: 13.5px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--dim);
+          border: 1px solid var(--line); padding: 15px 16px; border-radius: 14px; background: rgba(255,255,255,.03); cursor: pointer; }
   .brew b { color: var(--fg); font-weight: 500; }
+  .brew em { font-style: normal; color: var(--faint); min-width: 44px; text-align: right; }
   .brew:hover { border-color: rgba(255,255,255,.18); }
+  .ghost { display: inline-flex; align-items: center; padding: 13px 22px; border-radius: 14px; font-size: 16px; font-weight: 600;
+           border: 1px solid var(--line); background: rgba(255,255,255,.04); }
+  .ghost:hover { border-color: rgba(255,255,255,.2); }
   .meta { margin-top: 18px; font-size: 13px; color: var(--faint); }
 
-  .stage { margin: 70px auto 0; max-width: 920px; border-radius: 22px; overflow: hidden; position: relative;
-           box-shadow: 0 60px 120px -30px rgba(0,0,0,.8), 0 0 0 1px var(--line); }
-  .stage video, .stage img { display: block; width: 100%; height: auto; }
+  .stage { position: relative; margin: 64px auto 0; max-width: 760px; }
+  .stage::before { content: ""; position: absolute; inset: 8% -18% -6%; z-index: -1; pointer-events: none; filter: blur(60px); opacity: .45;
+                   background: radial-gradient(40% 45% at 25% 40%, var(--cursor), transparent 70%),
+                               radial-gradient(35% 40% at 75% 30%, var(--claude), transparent 70%),
+                               radial-gradient(45% 45% at 60% 75%, var(--codex), transparent 70%); }
+  .frame { border-radius: 22px; overflow: hidden; background: #1a1424;
+           box-shadow: 0 50px 110px -30px rgba(0,0,0,.85), 0 0 0 1px var(--line); }
 
-  section { padding: 140px 0 0; }
-  .feature { display: grid; grid-template-columns: 1fr 1.25fr; gap: 64px; align-items: center; }
-  .feature.flip { grid-template-columns: 1.25fr 1fr; }
-  .feature.flip .copy { order: 2; }
-  .kicker { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 14px; }
-  h2 { font-size: clamp(34px, 4.6vw, 52px); line-height: 1.05; letter-spacing: -.035em; font-weight: 700; }
-  .how { text-align: center; max-width: 660px; margin: 0 auto 44px; }
-  .how p { margin: 18px auto 0; color: var(--dim); font-size: 19px; }
-  #dispatch { max-width: 1040px; margin: 0 auto; }
-  .copy p { margin-top: 18px; color: var(--dim); font-size: 19px; max-width: 420px; }
-  kbd { font: 600 15px/1 -apple-system, system-ui, sans-serif; color: var(--fg); background: rgba(255,255,255,.08);
-        border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; margin: 0 1px; }
-  .shot { border-radius: 18px; overflow: hidden; box-shadow: 0 40px 90px -30px rgba(0,0,0,.8), 0 0 0 1px var(--line); }
-  .shot img, .shot video { display: block; width: 100%; height: auto; }
+  .caps { display: flex; justify-content: center; gap: 8px; margin-bottom: 28px; }
+  .split .caps { justify-content: flex-start; }
+  .cap { display: inline-flex; align-items: center; justify-content: center; min-width: 54px; height: 54px; padding: 0 15px;
+         border-radius: 12px; font: 500 20px/1 -apple-system, system-ui, sans-serif; color: var(--fg);
+         background: linear-gradient(180deg, #2b2b31, #1d1d22); border: 1px solid rgba(255,255,255,.06);
+         box-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 0 #000, 0 12px 24px -8px rgba(0,0,0,.7); }
+  .cap.wide { min-width: 120px; font-size: 15px; }
+  .howto { margin: 44px auto 0; text-align: center; }
+  .howto .caps { margin-bottom: 18px; }
+  .howto .cap { min-width: 44px; height: 44px; font-size: 17px; padding: 0 12px; border-radius: 10px; }
+  .howto p { color: var(--dim); font-size: 17px; }
+  h1, h2 { text-wrap: balance; }
+  p { text-wrap: pretty; }
 
-  .agents { display: flex; gap: 10px; margin-top: 26px; }
-  .agents span { font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }
-  .agents i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+  section { padding-top: 168px; }
+  h2 { font-size: clamp(34px, 5vw, 56px); line-height: 1.04; letter-spacing: -.038em; font-weight: 700; }
+  .center { text-align: center; }
+  .center > p { margin: 20px auto 0; max-width: 600px; color: var(--dim); font-size: 19px; }
+  .note { margin-top: 26px; font-size: 13px; color: var(--faint); }
+  .alert { margin: 56px auto 0; max-width: 860px; border-radius: 26px; overflow: hidden;
+           box-shadow: 0 40px 90px -30px rgba(0,0,0,.8), 0 0 0 1px var(--line); }
 
-  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
-  .stats div { padding: 46px 10px; text-align: center; }
-  .stats div + div { border-left: 1px solid var(--line); }
-  .stats b { display: block; font-size: 40px; letter-spacing: -.03em; font-weight: 700; }
-  .stats span { color: var(--dim); font-size: 14px; }
+  .split { display: grid; grid-template-columns: 1fr 1.15fr; gap: 72px; align-items: center; }
+  .split .copy p { margin-top: 20px; color: var(--dim); font-size: 19px; max-width: 420px; }
+  .split .frame { border-radius: 18px; }
+  kbd { font: 600 14px/1 -apple-system, system-ui, sans-serif; color: var(--fg); background: rgba(255,255,255,.08);
+        border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 3px 7px; margin: 0 1px; white-space: nowrap; }
 
-  .closer { text-align: center; padding: 160px 0 120px; }
-  .closer h2 { font-size: clamp(40px, 6vw, 68px); }
-  footer { border-top: 1px solid var(--line); padding: 34px 0 50px; color: var(--faint); font-size: 13px; }
-  footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  #dispatch { max-width: 900px; margin: 48px auto 0; }
+  #dispatch .iso-legend, #dispatch .iso-plate-corner:nth-child(-n+2) { display: none; }
+
+  .facts { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .facts div { padding: 44px 10px; text-align: center; }
+  .facts div + div { border-left: 1px solid var(--line); }
+  .facts b { display: block; font-size: 38px; letter-spacing: -.03em; font-weight: 700; }
+  .facts span { color: var(--dim); font-size: 14px; }
+
+  .closer { text-align: center; padding: 168px 0 128px; }
+  .closer .icon { width: 72px; height: 72px; margin-bottom: 26px; }
+  .closer h2 { font-size: clamp(36px, 5.4vw, 60px); }
+  footer { border-top: 1px solid var(--line); padding: 30px 0 46px; color: var(--faint); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   footer a:hover { color: var(--fg); }
 
-  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); }
-  .reveal.in { opacity: 1; transform: none; }
+  .js .reveal { opacity: 0; transform: translateY(20px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
+  .js .reveal.in { opacity: 1; transform: none; }
+
   @media (max-width: 860px) {
-    .feature, .feature.flip { grid-template-columns: 1fr; gap: 34px; }
-    .feature.flip .copy { order: 0; }
-    .stats { grid-template-columns: repeat(2, 1fr); }
-    .stats div:nth-child(3) { border-left: 0; }
-    nav .links a:not(.pill) { display: none; }
+    header { padding-top: 112px; }
+    section { padding-top: 120px; }
+    .split { grid-template-columns: 1fr; gap: 36px; }
+    .closer { padding: 120px 0 96px; }
   }
-  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+  @media (max-width: 560px) {
+    .wrap { padding-inline: 16px; }
+    .lede { font-size: 18px; }
+    .brew { font-size: 12px; padding: 14px 12px; gap: 8px; }
+    .brew em { display: none; }
+    .facts div { padding: 28px 4px; }
+    .facts b { font-size: 28px; }
+    .facts span { font-size: 12px; }
+    .alert { border-radius: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .js .reveal { opacity: 1; transform: none; transition: none; } }
 </style>
 </head>
 <body>
 <nav><div class="wrap">
   <a class="brand" href="/"><img src="/media/icon.png" alt="">Muster</a>
   <div class="links">
-    <a href="#answer">Features</a>
     <a href="https://github.com/josefchen/muster">GitHub</a>
     <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
   </div>
 </div></nav>
 
-<header>
-  <div class="glow"></div>
-  <div class="wrap">
-    <img class="icon" src="/media/icon.png" alt="Muster">
-    <h1>Every agent,<br><span>one glance.</span></h1>
-    <p class="lede">A native Mac switcher for your Claude, Codex and Cursor sessions.</p>
-    <div class="ctas">
-      <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">
-        <svg viewBox="0 0 17 20" fill="currentColor"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
-        Download for Mac
-      </a>
-      <span class="brew" title="Copy" onclick="navigator.clipboard.writeText('brew install --cask josefchen/tap/muster');this.querySelector('em').textContent='Copied'">
-        <span>$</span><b>brew install --cask josefchen/tap/muster</b><em style="font-style:normal">Copy</em>
-      </span>
-    </div>
-    <p class="meta">Free and open source · macOS 14 or later · Apple silicon and Intel</p>
-    <div class="stage reveal">
-      <video autoplay muted loop playsinline poster="/media/switcher-dark.jpg">
+<header><div class="wrap">
+  <img class="icon" src="/media/icon.png" alt="Muster">
+  <h1>Every agent,<br><span>one glance.</span></h1>
+  <p class="lede">Muster watches your Claude, Codex and Cursor sessions from the menu bar and tells you which one is waiting on you.</p>
+  <div class="ctas">
+    <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">
+      <svg viewBox="0 0 17 20" fill="currentColor" aria-hidden="true"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
+      Download for Mac
+    </a>
+    <button class="brew" type="button" data-copy="brew install --cask josefchen/tap/muster" aria-label="Copy the Homebrew install command">
+      <span aria-hidden="true">$</span><b>brew install --cask josefchen/tap/muster</b><em>Copy</em>
+    </button>
+  </div>
+  <p class="meta">Free and open source · macOS 14 or later · 2 MB</p>
+  <div class="stage reveal">
+    <div class="frame">
+      <video autoplay muted loop playsinline preload="auto" poster="/media/hero-poster.jpg" width="1200" height="1062"
+             aria-label="Holding Option and tapping Tab moves through sessions, most urgent first">
         <source src="/media/hero.webm" type="video/webm">
         <source src="/media/hero.mp4" type="video/mp4">
       </video>
     </div>
   </div>
-</header>
-
-<section id="answer"><div class="wrap feature reveal">
-  <div class="copy">
-    <div class="kicker" style="color:var(--claude)">Answer from anywhere</div>
-    <h2>Say yes without switching.</h2>
-    <p>When an agent asks to run a command or picks your brain, answer with <kbd>⌥</kbd><kbd>↩</kbd> or straight from the notification.</p>
+  <div class="howto reveal">
+    <div class="caps"><span class="cap">⌥</span><span class="cap">Tab</span></div>
+    <p>Hold ⌥ and tap Tab. The session that needs you is first, and letting go opens it.</p>
   </div>
-  <div class="shot"><img src="/media/switcher-dark.jpg" alt="A pending command waiting for approval in Muster" loading="lazy"></div>
-</div></section>
+</div></header>
 
-<section><div class="wrap feature flip reveal">
-  <div class="copy">
-    <div class="kicker" style="color:var(--cursor)">⌥Tab</div>
-    <h2>Every agent, one keystroke away.</h2>
-    <p>Most urgent first. Let go to land in the right window, even the terminal it runs in.</p>
-    <div class="agents">
-      <span><i style="background:var(--claude)"></i>Claude</span>
-      <span><i style="background:var(--codex)"></i>Codex</span>
-      <span><i style="background:var(--cursor)"></i>Cursor</span>
-    </div>
-  </div>
-  <div class="shot"><img src="/media/switcher-light.jpg" alt="The switcher in light mode" loading="lazy"></div>
-</div></section>
+<section class="wrap center reveal">
+  <div class="caps"><span class="cap">⌥</span><span class="cap">↩</span></div>
+  <h2>Answer without switching.</h2>
+  <p>When an agent wants to run a command, the request shows up at the top of whichever screen you're on. Allow it from there, or deny it with <kbd>⌥</kbd><kbd>⌫</kbd>. Questions and plan approvals work the same way.</p>
+  <div class="alert"><img src="/media/alert.jpg" width="1240" height="260" alt="Muster's alert: Claude wants to run npm run migrate, with Allow and Deny shortcuts" loading="lazy"></div>
+  <p class="note">Works with Claude Code and Codex once you turn it on.</p>
+</section>
 
-<section><div class="wrap feature reveal">
+<section class="wrap split reveal">
   <div class="copy">
-    <div class="kicker" style="color:var(--codex)">Search and spend</div>
-    <h2>Find anything. See what it costs.</h2>
-    <p><kbd>⌃</kbd><kbd>⌥</kbd><kbd>Space</kbd> finds any session. Every one shows its tokens and what they'd cost at API prices.</p>
+    <div class="caps"><span class="cap">⌃</span><span class="cap">⌥</span><span class="cap wide">Space</span></div>
+    <h2>Find any session.</h2>
+    <p>Every session from the last three hours, in one list. Start typing to narrow it down.</p>
+    <p>Each one shows its tokens and what they would cost at API list prices. On a Max or Pro plan you don't pay that, but it tells you which sessions are the expensive ones.</p>
   </div>
-  <div class="shot">
-    <video autoplay muted loop playsinline poster="/media/deck-dark.jpg" loading="lazy">
+  <div class="frame">
+    <video autoplay muted loop playsinline preload="none" poster="/media/search-poster.jpg" width="1200" height="1132"
+           aria-label="Searching sessions by typing rust">
       <source src="/media/search.webm" type="video/webm">
       <source src="/media/search.mp4" type="video/mp4">
     </video>
   </div>
-</div></section>
+</section>
 
-<section id="how"><div class="wrap reveal">
-  <div class="how">
-    <div class="kicker" style="color:var(--claude)">How it works</div>
-    <h2>Nothing leaves your Mac.</h2>
-    <p>Muster reads the sessions your agents already save. When one asks, the question comes to Muster and your answer goes straight back. Try it: click the desk, <kbd>Tab</kbd> to select, <kbd>⌥</kbd><kbd>↩</kbd> to allow.</p>
-  </div>
+<section class="wrap center reveal" id="how">
+  <h2>Nothing leaves your Mac.</h2>
+  <p>Muster reads the session files your agents already write. An agent's question reaches Muster over localhost, and your answer goes back the same way. There's no account and no analytics, and the update check stays off until you turn it on.</p>
   <div id="dispatch"></div>
-</div></section>
+</section>
 <script type="module" src="/figure/dispatch.js"></script>
 
-<section><div class="wrap">
-  <div class="stats reveal">
+<section class="wrap">
+  <div class="facts reveal">
     <div><b>2 MB</b><span>the whole app</span></div>
-    <div><b>~25 MB</b><span>memory in use</span></div>
-    <div><b>0</b><span>accounts or tracking</span></div>
+    <div><b>0</b><span>accounts or analytics</span></div>
     <div><b>MIT</b><span>open source</span></div>
   </div>
-</div></section>
+</section>
 
 <div class="closer"><div class="wrap reveal">
-  <h2>Run more agents.<br>Miss nothing.</h2>
+  <img class="icon" src="/media/icon.png" alt="">
+  <h2>Run more agents<br>without losing track.</h2>
   <div class="ctas">
     <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download for Mac</a>
-    <a class="brew" href="https://github.com/josefchen/muster"><b>Star on GitHub</b></a>
+    <a class="ghost" href="https://github.com/josefchen/muster">View on GitHub</a>
   </div>
 </div></div>
 
 <footer><div class="wrap">
-  <span>Muster is independent and not affiliated with Anthropic, OpenAI or Anysphere.</span>
+  <span>Muster is an independent project, not affiliated with Anthropic, OpenAI or Anysphere.</span>
   <span><a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
 </div></footer>
 
 <script>
-  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && (e.target.classList.add('in'), io.unobserve(e.target))), { threshold: .15 });
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const io = new IntersectionObserver(entries => entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    e.target.classList.add('in');
+    io.unobserve(e.target);
+  }), { threshold: .12 });
   document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+
+  // Videos play only while on screen, and not at all with reduced motion.
+  const vio = new IntersectionObserver(entries => entries.forEach(e => {
+    const v = e.target;
+    if (still) { v.pause(); return; }
+    if (e.isIntersecting) { v.preload = 'auto'; v.play().catch(() => {}); } else v.pause();
+  }), { threshold: .2 });
+  document.querySelectorAll('video').forEach(v => { if (still) v.removeAttribute('autoplay'); vio.observe(v); });
+
+  document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
+    navigator.clipboard.writeText(b.dataset.copy).then(() => {
+      const em = b.querySelector('em');
+      em.textContent = 'Copied';
+      setTimeout(() => em.textContent = 'Copy', 1600);
+    });
+  }));
 </script>
 </body>
 </html>
