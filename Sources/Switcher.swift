@@ -31,6 +31,7 @@ final class Switcher {
         empty.alignment = .center
         empty.stringValue = "No agents running"
         panel.acceptsMouseMovedEvents = true
+        panel.identifier = NSUserInterfaceItemIdentifier("muster.switcher")
         [list, hint, empty].forEach(panel.content.addSubview)
         list.onHover = { [weak self] i in self?.highlight(i) }
         list.onClick = { [weak self] i in self?.choose(i) }
@@ -112,7 +113,7 @@ final class Switcher {
     private func watchRelease() {
         releaseWatch?.invalidate()
         releaseWatch = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { [weak self] _ in
-            let held = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let held = E2E.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard let self, !held.isSuperset(of: Hotkeys.shared.switcher.flags.subtracting(.shift)) else { return }
             let chosen = self.snapshot.indices.contains(self.list.selected) ? self.snapshot[self.list.selected] : nil
             self.end()
@@ -124,6 +125,7 @@ final class Switcher {
     /// The global monitor catches that case. Events this app does receive come
     /// through the list, and the two never both fire for one click.
     private func watchPointer() {
+        guard E2E.showsUI else { return }
         localMouse = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .mouseMoved]) { [weak self] event in
             self?.pointer(event, click: event.type == .leftMouseDown)
             return event

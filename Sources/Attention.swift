@@ -26,6 +26,7 @@ final class Attention {
 
     init() {
         more.alignment = .center
+        panel.identifier = NSUserInterfaceItemIdentifier("muster.alert")
         surface.frame = panel.content.bounds
         surface.autoresizingMask = [.width, .height]
         surface.onClick = { [weak self] in self?.open() }

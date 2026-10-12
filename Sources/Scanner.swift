@@ -4,7 +4,7 @@ import SQLite3
 // Reads live agent sessions straight from the files each app already writes, the
 // same files their own windows render from. No hooks, no network.
 
-let home = FileManager.default.homeDirectoryForCurrentUser.path
+let home = ProcessInfo.processInfo.environment["MUSTER_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path   // e2e fixture
 let recentWindow: TimeInterval = 3 * 3600   // files untouched for longer are not read
 
 // MARK: - JSONL

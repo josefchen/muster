@@ -69,7 +69,7 @@ final class Hotkeys: ObservableObject {
     /// Shortcuts macOS refused because something else registered them first.
     @Published private(set) var conflicts: Set<String> = []
 
-    private var handler: ((Action) -> Void)?
+    private(set) var handler: ((Action) -> Void)?
     var onAnswer: ((Answer) -> Void)?
     private var refs: [EventHotKeyRef] = []
     private var answerRefs: [EventHotKeyRef] = []
@@ -121,7 +121,7 @@ final class Hotkeys: ObservableObject {
     private func registerAnswerKeys() {
         answerRefs.forEach { UnregisterEventHotKey($0) }
         answerRefs.removeAll()
-        guard !answerOwners.isEmpty else { return }
+        guard !answerOwners.isEmpty, E2E.showsUI else { return }
         let m = switcher.modifiers
         let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9]
         var keys: [(UInt32, UInt32, UInt32)] = [(10, UInt32(kVK_Return), m), (11, UInt32(kVK_Return), m | UInt32(shiftKey)),
@@ -149,6 +149,7 @@ final class Hotkeys: ObservableObject {
 
     private func register() {
         unregister()
+        guard E2E.showsUI else { return }   // headless e2e runs leave your keys alone
         var failed: Set<String> = []
         let m = switcher.modifiers
         if !add(.next, switcher.keyCode, m) { failed.insert("switcher") }

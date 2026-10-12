@@ -27,6 +27,7 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     override init() {
         super.init()
         panel.delegate = self
+        panel.identifier = NSUserInterfaceItemIdentifier("muster.deck")
         panel.onKeyEquivalent = { [weak self] e in self?.keyEquivalent(e) ?? false }
 
         search.isBordered = false

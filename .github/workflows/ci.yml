@@ -13,3 +13,7 @@ jobs:
         run: ./test.sh
       - name: Build
         run: swiftc -O -swift-version 5 -target arm64-apple-macos14 -o Muster Sources/*.swift
+      - name: End-to-end
+        run: scripts/e2e.sh
+      - name: Soak
+        run: scripts/e2e.sh --soak 2

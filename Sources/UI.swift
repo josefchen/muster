@@ -61,9 +61,16 @@ class GlassPanel: NSPanel {
             glass = v
         }
         contentView = glass
+        E2E.adopt(self)
     }
 
-    override var canBecomeKey: Bool { canKey }
+    override var canBecomeKey: Bool { canKey && E2E.showsUI }
+
+    /// Headless e2e runs keep every panel transparent and click-through.
+    override var alphaValue: CGFloat {
+        get { super.alphaValue }
+        set { super.alphaValue = E2E.showsUI ? newValue : 0 }
+    }
 }
 
 /// One session: app icon, title, project and age, state, tokens.

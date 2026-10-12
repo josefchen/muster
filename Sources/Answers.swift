@@ -56,7 +56,7 @@ final class Prompts {
     static let shared = Prompts()
     /// The port hooks call. Kept across launches so installed hooks stay valid;
     /// moves to the next free one only if something else took it.
-    private static let ports: ClosedRange<UInt16> = 47621...47640
+    private static let ports: ClosedRange<UInt16> = E2E.ports ?? 47621...47640
     private(set) static var port: UInt16 = {
         let saved = UserDefaults.standard.integer(forKey: "hookPort")
         return ports.contains(UInt16(clamping: saved)) ? UInt16(clamping: saved) : ports.lowerBound
@@ -175,6 +175,7 @@ final class Prompts {
     }
 
     private func isHost(_ app: NSRunningApplication, of p: Prompt) -> Bool {
+        if E2E.on { return E2E.front == p.agent }
         if p.agent.bundleIDs.contains(app.bundleIdentifier ?? "") { return true }
         let probe = Session(agent: p.agent, sid: p.sessionID, status: .needsYou, since: p.created, title: "", project: p.project, appID: "")
         return ProcessHost.app(running: probe)?.processIdentifier == app.processIdentifier

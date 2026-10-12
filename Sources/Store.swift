@@ -167,6 +167,7 @@ enum Opener {
         guard !Store.demo else { return }
         Store.shared.markOpened(s)
         Stats.record(.jumped)
+        if E2E.on { E2E.opening = s }
         if let host = ProcessHost.app(running: s), !s.agent.bundleIDs.contains(host.bundleIdentifier ?? "") {
             host.activate()
             return
@@ -186,12 +187,14 @@ enum Opener {
     }
 
     static func activate(_ agent: Agent) {
+        if E2E.on { return E2E.record("activate:" + agent.rawValue) }
         guard let url = agent.bundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first
         else { return }
         NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
 
     private static func openURL(_ s: String) -> Bool {
+        if E2E.on { E2E.record(s); return true }
         guard let url = URL(string: s), NSWorkspace.shared.urlForApplication(toOpen: url) != nil else { return false }
         return NSWorkspace.shared.open(url)
     }
@@ -205,6 +208,7 @@ enum Opener {
 /// working directory is the session's project, walked up to its first regular app.
 enum ProcessHost {
     static func app(running s: Session) -> NSRunningApplication? {
+        if E2E.on { return nil }
         let names: Set<String> = s.agent == .claude ? ["claude"] : s.agent == .codex ? ["codex"] : []
         guard !names.isEmpty, !s.project.isEmpty else { return nil }
         for pid in allPIDs() where names.contains(name(pid)) && cwd(pid) == s.project {

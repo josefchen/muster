@@ -136,7 +136,10 @@ No accounts, no analytics. The only network request is the update check, which h
 git clone https://github.com/josefchen/muster.git && cd muster
 ./build.sh            # build, install to ~/Applications, launch
 ./test.sh             # reader tests against fixture files
+scripts/e2e.sh        # end-to-end: the real app against a fake home folder
 ```
+
+`scripts/e2e.sh` drives the built app the way the agents and you would (transcripts, hook requests, the switcher, deck and alert) without touching your own agents or settings; `--soak [minutes]` checks CPU and memory under load, and `--ui` replays real keystrokes and clicks (it takes over the keyboard while it runs).
 
 `scripts/release.sh <version>` builds a universal, signed and notarized DMG. `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` regenerate the screenshots, the video and the welcome tour from demo mode (`Muster --demo`).
 

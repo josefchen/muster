@@ -17,7 +17,7 @@ enum Updates {
     static func schedule() {
         timer?.invalidate()
         timer = nil
-        guard automatic, !Store.demo else { return }
+        guard automatic, !Store.demo, !E2E.on else { return }
         let due = { Date().timeIntervalSince1970 - d.double(forKey: "updates.last") > 86_400 }
         if due() { check(manual: false) }
         timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in if due() { check(manual: false) } }

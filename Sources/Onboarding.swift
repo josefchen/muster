@@ -732,7 +732,8 @@ enum Conflicts {
 }
 
 enum Installer {
-    static let reopen = Notification.Name("dev.muster.app.reopen")
+    /// Per bundle id, so a test build (dev.muster.e2e) never answers the real app's hand-off.
+    static let reopen = Notification.Name((Bundle.main.bundleIdentifier ?? "dev.muster.app") + ".reopen")
 
     /// Another Muster is already running: hand over to it and quit.
     static func handOffIfRunning() -> Bool {

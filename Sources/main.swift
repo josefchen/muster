@@ -25,7 +25,10 @@ enum Settings {
 
     static var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
-        set { try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister() }
+        set {
+            guard !E2E.on else { return }
+            try? newValue ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+        }
     }
 }
 
@@ -46,6 +49,7 @@ final class StatusItem: NSObject {
         item.button?.target = self
         item.button?.action = #selector(clicked)
         item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        if !E2E.showsUI { item.isVisible = false }
         Store.shared.observe { [weak self] in self?.render($0) }
     }
 
@@ -311,7 +315,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        if !Store.demo, Installer.handOffIfRunning() || Installer.offerMove() { NSApp.terminate(nil); return }
+        E2E.start()
+        if !Store.demo, !E2E.on, Installer.handOffIfRunning() || Installer.offerMove() { NSApp.terminate(nil); return }
         DistributedNotificationCenter.default().addObserver(forName: Installer.reopen, object: nil, queue: .main) { [weak self] _ in
             self?.settings.show()
         }
@@ -343,11 +348,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else if self.deck.isVisible { self.deck.answer(a) }
             else { self.attention.answer(a) }
         }
-        if Bundle.main.bundleIdentifier != nil && !Store.demo { notifier = Notifier() }
+        if Bundle.main.bundleIdentifier != nil && !Store.demo && !E2E.on { notifier = Notifier() }
         if Store.demo, CommandLine.arguments.contains("--backdrop") { Demo.showBackdrop() }
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
-        if !UserDefaults.standard.bool(forKey: "launched") && (!Store.demo || CommandLine.arguments.contains("--welcome")) {
+        if !E2E.on && !UserDefaults.standard.bool(forKey: "launched") && (!Store.demo || CommandLine.arguments.contains("--welcome")) {
             welcome.show()
         }
     }
