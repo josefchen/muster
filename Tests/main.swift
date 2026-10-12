@@ -173,6 +173,137 @@ check(history.stats.appended == 1 && history.stats.bytesRead == UInt64(appended.
 check(UsageHistory.sample(now: now).tokens == UsageHistory.sample(now: now).tokens && UsageHistory.sample(now: now).tokens > 0,
       "demo history is the same every time")
 
+print("Claude billing")
+let live = "/live/.claude/projects/-work-atlas"
+func said(_ id: String, _ session: String, _ ago: Double, _ usage: [String: Any], sidechain: Bool = false,
+          stop: String = "end_turn", tool: String? = nil) -> String {
+    let content: [[String: Any]] = tool.map { [["type": "tool_use", "name": $0, "input": ["command": "ls"]]] } ?? [["type": "text", "text": "ok"]]
+    return json(["type": "assistant", "sessionId": session, "timestamp": isoFrac.string(from: now.addingTimeInterval(-ago)),
+                 "cwd": "/work/atlas", "isSidechain": sidechain,
+                 "message": ["id": id, "model": "claude-opus-5-5", "stop_reason": stop, "content": content, "usage": usage]])
+}
+// Claude.app writes a message to the old transcript and to the one it compacted into.
+write(live + "/early.jsonl", [said("msg_E1", "early", 600, small), said("msg_S", "early", 300, u1)].joined(separator: "\n") + "\n")
+write(live + "/late.jsonl", [said("msg_S", "late", 300, u1), said("msg_L1", "late", 60, u2)].joined(separator: "\n") + "\n")
+// A resumed session starts with a copy of the history it continues.
+write(live + "/resumed.jsonl", [said("msg_E1", "early", 600, small), said("msg_R1", "resumed", 30, small)].joined(separator: "\n") + "\n")
+// Subagents: beside the session, nested in a workflow, and in the older top-level layout (copied into a second project).
+write(live + "/early/subagents/agent-s1.jsonl", said("msg_S1", "early", 200, small, sidechain: true) + "\n")
+write(live + "/early/subagents/workflows/wf_1/agent-w1.jsonl", said("msg_W1", "early", 200, small, sidechain: true) + "\n")
+write(live + "/agent-t1.jsonl", said("msg_T1", "early", 200, small, sidechain: true) + "\n")
+write("/live/.claude/projects/-work-other/agent-t1.jsonl", said("msg_T1", "early", 200, small, sidechain: true) + "\n")
+let billing = Dictionary(uniqueKeysWithValues: ClaudeReader(home: root + "/live").scan(now: now).map { ($0.sid, $0) })
+check(billing["early"]?.tokens == 10 + 1360 + 10 + 10 + 10 && billing["late"]?.tokens == 2021,
+      "a message two sessions both wrote bills once, to the session that started first")
+check(billing["resumed"]?.tokens == 10, "a resumed session doesn't bill the history it copied")
+check(billing.values.reduce(0) { $0 + $1.tokens } == 10 + 1360 + 2021 + 10 + 10 + 10 + 10,
+      "subagents, nested workflow agents and top-level agent files bill to their session, once")
+check(billing.keys.allSatisfy { !$0.hasPrefix("agent-") }, "agent transcripts never show as sessions")
+for order in [["late", "early"], ["early", "late"]] {
+    let tally = UsageTally()
+    tally.begin()
+    for sid in order { tally.add(stat(root + live + "/\(sid).jsonl")!, session: sid) }
+    tally.end()
+    check(tally.usage(of: "early").values.reduce(0) { $0 + $1.total } == 1370 && tally.usage(of: "late").values.reduce(0) { $0 + $1.total } == 2021,
+          "the earlier session keeps the message whichever file is read first (\(order[0]) first)")
+}
+
+print("Incremental reads")
+let grow = root + live + "/grow.jsonl"
+let streaming: [String: Any] = ["input_tokens": 1, "cache_read_input_tokens": 2000, "output_tokens": 5]
+let finished: [String: Any] = ["input_tokens": 1, "cache_read_input_tokens": 2000, "output_tokens": 20]
+let last = said("msg_G2", "grow", 2, finished)
+write(live + "/grow.jsonl", [said("msg_G1", "grow", 20, small, stop: "tool_use", tool: "Bash"),
+                             said("msg_G2", "grow", 2, streaming, stop: "")].joined(separator: "\n") + "\n" + last.prefix(last.count / 2))
+let reader = ClaudeReader(home: root + "/live")
+func session(_ sid: String, _ changes: Changes = .all) -> Session? { reader.scan(now: now, changes: changes).first { $0.sid == sid } }
+let half = session("grow")
+check(half?.status == .working && half?.tokens == 10 + 2006, "a line still being written is left for the next scan")
+func append(_ path: String, _ text: String) {
+    let h = FileHandle(forWritingAtPath: path)!
+    h.seekToEndOfFile()
+    h.write(text.data(using: .utf8)!)
+    try! h.close()
+}
+append(grow, String(last.dropFirst(last.count / 2)) + "\n")
+let completed = session("grow")
+check(completed?.status == .done && completed?.tokens == 10 + 2021, "once finished, it updates the status and the message's usage, counted once")
+append(grow, said("msg_G3", "grow", 1, small, stop: "tool_use", tool: "Bash") + "\n")
+check(session("grow", Changes())?.tokens == 10 + 2021, "a scan told nothing changed reads nothing")
+var named = Changes()
+named.add(canonical(root + live) + "/")
+let told = session("grow", named)
+check(told?.tokens == 10 + 2021 + 10 && told?.status == .working, "a scan reads the directories FSEvents named")
+let h2 = FileHandle(forWritingAtPath: grow)!
+try! h2.truncate(atOffset: 0)
+h2.write((said("msg_G4", "grow", 1, u2) + "\n").data(using: .utf8)!)
+try! h2.close()
+let truncated = session("grow")
+check(truncated?.tokens == 2021 && truncated?.status == .done, "a truncated transcript is read again from the start")
+let h3 = FileHandle(forWritingAtPath: grow)!
+try! h3.truncate(atOffset: 0)
+h3.write(((1...6).map { said("msg_P\($0)", "grow", 1, small) }.joined(separator: "\n") + "\n").data(using: .utf8)!)
+try! h3.close()
+check(session("grow")?.tokens == 60, "a transcript rewritten in place to a larger size is read again from the start")
+write(live + "/grow.jsonl", said("msg_G5", "grow", 1, small, stop: "tool_use", tool: "Read") + "\n")
+let replaced = session("grow")
+check(replaced?.tokens == 10 && replaced?.status == .working, "a replaced transcript is read again from the start")
+
+// A tool result too big to load (12 MB > the 8 MB a line may take), keys in Claude Code's order.
+func giant(_ session: String) -> String {
+    "{\"parentUuid\":null,\"isSidechain\":false,\"cwd\":\"/work/atlas\",\"sessionId\":\"\(session)\",\"type\":\"user\"," +
+    "\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"content\":\"" + String(repeating: "a", count: 12 << 20) +
+    "\"}]},\"timestamp\":\"\(isoFrac.string(from: now))\"}\n"
+}
+let huge = root + live + "/huge.jsonl"
+write(live + "/huge.jsonl", said("msg_B1", "huge", 30, small, stop: "tool_use", tool: "Bash") + "\n" + giant("huge"))
+let hugeReader = ClaudeReader(home: root + "/live")
+let hugeFirst = hugeReader.scan(now: now).first { $0.sid == "huge" }
+check(hugeFirst?.status == .working && hugeFirst?.tokens == 10, "a giant tool result as the newest line keeps the session, working")
+append(huge, said("msg_B2", "huge", 1, small) + "\n")
+check(hugeReader.scan(now: now).first { $0.sid == "huge" }?.status == .done, "…and the reply after it reads as done")
+append(huge, giant("huge"))
+let hugeAgain = hugeReader.scan(now: now).first { $0.sid == "huge" }
+check(hugeAgain?.status == .working && hugeAgain?.tokens == 20, "a giant line appended later reads as working, without being loaded")
+
+let codexReader = CodexReader(home: root)
+_ = codexReader.scan(now: now)
+append(root + rollout, json(["type": "event_msg", "timestamp": iso(now), "payload": ["type": "task_started"]]) + "\n"
+       + json(["type": "event_msg", "payload": ["type": "token_count", "info": ["total_token_usage": [
+           "input_tokens": 12_000, "cached_input_tokens": 8_000, "cache_write_input_tokens": 1_000, "output_tokens": 700]]]]) + "\n")
+let resumedCodex = codexReader.scan(now: now).first
+check(resumedCodex?.status == .working && resumedCodex?.tokens == 12_700, "Codex reads only what was appended: a new turn and its running total")
+let cursorReader = CursorReader(home: root)
+_ = cursorReader.scan(now: now)
+append(root + "/.cursor/projects/work-web/agent-transcripts/c2/c2.jsonl", json(["message": ["content": [["text": "And light mode"]]]]) + "\n")
+let reopened = cursorReader.scan(now: now).first { $0.sid == "c2" }
+check(reopened?.status == .working && reopened?.title == "Add dark mode", "a Cursor chat that continues reads as working, keeping its title")
+
+// What FSEvents does and doesn't report: a folder's permission change goes to its
+// parent, a watched folder's own change goes nowhere, and Codex's rollout paths
+// needn't be spelled the way FSEvents spells them (/var vs /private/var here).
+append(root + rollout, json(["type": "event_msg", "timestamp": iso(now), "payload": ["type": "task_complete"]]) + "\n")
+check(codexReader.scan(now: now, changes: Changes()).first?.status == .done, "a Codex rollout is checked every scan, whatever its path's spelling")
+func named(_ dir: String) -> Changes { var c = Changes(); c.add(canonical(dir)); return c }
+let projects = root + "/live/.claude/projects"
+chmod(root + live, 0o000)
+let lockedProject = reader.scan(now: now, changes: named(projects))
+chmod(root + live, 0o755)
+check(!lockedProject.contains { $0.sid == "early" }, "an unreadable project folder drops its sessions")
+check(reader.scan(now: now, changes: named(projects)).contains { $0.sid == "early" }, "…which come back once it's readable")
+chmod(root + "/.codex/state_5.sqlite", 0o000)
+_ = codexReader.scan(now: now, changes: named(root + "/.codex"))
+let lockedDB = codexReader.state
+chmod(root + "/.codex/state_5.sqlite", 0o644)
+check({ if case .unreadable = lockedDB { return true } else { return false } }(), "an unreadable Codex database shows as unreadable, open connection or not")
+_ = codexReader.scan(now: now, changes: named(root + "/.codex"))
+check(codexReader.state == .ok(1), "…and recovers")
+chmod(root + "/.cursor/projects", 0o000)
+let lockedCursor = cursorReader.scan(now: now, changes: Changes())
+chmod(root + "/.cursor/projects", 0o755)
+check(!lockedCursor.contains { $0.sid == "c2" }, "an unreadable Cursor projects folder drops its file-only chats, though FSEvents says nothing")
+check(cursorReader.scan(now: now, changes: Changes()).contains { $0.sid == "c2" }, "…which come back")
+
 print("Pricing")
 check(Pricing.price(for: "claude-haiku-4-5-20251001") != nil, "dated model ids resolve by prefix")
 check(Pricing.price(for: "some-new-model") == nil, "unknown models are not priced")

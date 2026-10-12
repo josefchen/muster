@@ -3,13 +3,15 @@ import CoreServices
 
 /// Owns the session list. Rescans on file-system events from the apps' own
 /// folders (coalesced) plus a slow timer for time-based transitions, on a
-/// background queue; delivers sorted snapshots on the main thread.
+/// background queue; delivers sorted snapshots on the main thread. Readers are
+/// told which directories changed, so a scan re-reads only those.
 final class Store {
     static let shared = Store()
 
     static let staleWorking: TimeInterval = 20 * 60   // "working" this quiet is shown as idle
     static let tick: TimeInterval = 5                 // for permission waits and staleness
     static let minInterval: TimeInterval = 1          // agents write constantly; one rescan a second is plenty
+    static let fullPass: TimeInterval = 30            // re-read everything now and then, in case an event went missing
 
     private(set) var sessions: [Session] = []
     private(set) var sources: [Agent: SourceState] = [:]
@@ -20,8 +22,12 @@ final class Store {
     private let codex = CodexReader()
     private let cursor = CursorReader()
     private var stream: FSEventStreamRef?
+    private var watched: [String] = []
     private var timer: Timer?
     private var pending = false
+    private var changes = Changes.all                 // since the last scan; the first one reads everything
+    private var lastFull = Date()
+    private var scanned: Set<Agent> = []              // readers on during the last scan
     private var lastScan = Date.distantPast
     private var lastFound: [Session] = []
     private var opened: [String: Double]
@@ -48,7 +54,7 @@ final class Store {
             publish(Session.samples)
             return
         }
-        watch(claude.watchPaths + codex.watchPaths + cursor.watchPaths)
+        watch()
         timer = Timer.scheduledTimer(withTimeInterval: Self.tick, repeats: true) { [weak self] _ in self?.rescan() }
         rescan()
     }
@@ -65,15 +71,25 @@ final class Store {
             return
         }
         lastScan = Date()
+        if lastScan.timeIntervalSince(lastFull) >= Self.fullPass { changes.full = true }
+        if changes.full {
+            lastFull = lastScan
+            watch()   // a folder that appeared since launch gets watched too
+        }
         let enabled = Settings.enabledAgents
+        let fresh = enabled.subtracting(scanned)          // just turned on: it missed its events
+        scanned = enabled
+        let changed = changes
+        changes = Changes()
         queue.async { [weak self] in
             guard let self else { return }
             let found: [Session] = autoreleasepool {
                 let now = Date()
+                let since = { (a: Agent) in fresh.contains(a) ? Changes.all : changed }
                 var all: [Session] = []
-                if enabled.contains(.claude) { all += self.claude.scan(now: now) }
-                if enabled.contains(.codex) { all += self.codex.scan(now: now) }
-                if enabled.contains(.cursor) { all += self.cursor.scan(now: now) }
+                if enabled.contains(.claude) { all += self.claude.scan(now: now, changes: since(.claude)) }
+                if enabled.contains(.codex) { all += self.codex.scan(now: now, changes: since(.codex)) }
+                if enabled.contains(.cursor) { all += self.cursor.scan(now: now, changes: since(.cursor)) }
                 return all.compactMap { s in
                     var s = s
                     if s.status == .working, now.timeIntervalSince(s.since) > Self.staleWorking { s.status = .idle }
@@ -81,12 +97,13 @@ final class Store {
                     return s
                 }
             }
-            malloc_zone_pressure_relief(nil, 0)
+            if changed.full { malloc_zone_pressure_relief(nil, 0) }
             let sources: [Agent: SourceState] = [.claude: self.claude.state, .codex: self.codex.state, .cursor: self.cursor.state]
             DispatchQueue.main.async {
                 self.pending = false
                 self.sources = sources
                 self.publish(found)
+                if !self.changes.isEmpty { self.rescan() }   // events that arrived mid-scan
             }
         }
     }
@@ -139,14 +156,33 @@ final class Store {
         }
     }
 
-    private func watch(_ paths: [String]) {
-        let existing = paths.filter { FileManager.default.fileExists(atPath: $0) }
+    /// Watches the readers' folders that exist. Each event names a directory whose
+    /// entries or files changed; the next scan re-reads just those.
+    private func watch() {
+        let existing = (claude.watchPaths + codex.watchPaths + cursor.watchPaths).filter { FileManager.default.fileExists(atPath: $0) }
+        guard existing != watched else { return }
+        if let stream {
+            FSEventStreamStop(stream)
+            FSEventStreamInvalidate(stream)
+            FSEventStreamRelease(stream)
+            self.stream = nil
+        }
+        watched = existing
         guard !existing.isEmpty else { return }
         var ctx = FSEventStreamContext(version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
                                        retain: nil, release: nil, copyDescription: nil)
-        let callback: FSEventStreamCallback = { _, info, _, _, _, _ in
+        let callback: FSEventStreamCallback = { _, info, count, paths, flags, _ in
             guard let info else { return }
-            Unmanaged<Store>.fromOpaque(info).takeUnretainedValue().rescan()
+            let store = Unmanaged<Store>.fromOpaque(info).takeUnretainedValue()
+            let names = paths.assumingMemoryBound(to: UnsafePointer<CChar>.self)
+            let lost = FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped
+                                               | kFSEventStreamEventFlagRootChanged)
+            let subtree = FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)
+            for i in 0..<count {
+                if flags[i] & lost != 0 { store.changes.full = true; continue }
+                store.changes.add(String(cString: names[i]), subtree: flags[i] & subtree != 0)
+            }
+            store.rescan()
         }
         stream = FSEventStreamCreate(nil, callback, &ctx, existing as CFArray,
                                      FSEventStreamEventId(kFSEventStreamEventIdSinceNow), 0.4,
