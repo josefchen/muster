@@ -1,5 +1,4 @@
 import AppKit
-import Network
 
 // Answer an agent's prompt from Muster: permission requests, Claude's multiple
 // choice questions and plan approvals, delivered by the agents' own hooks to a
@@ -67,7 +66,7 @@ final class Prompts {
     private(set) var pending: [UUID: Prompt] = [:]
     private var replies: [UUID: (Data) -> Void] = [:]
     private var raw: [UUID: [String: Any]] = [:]
-    private var listener: NWListener?
+    private let server = HookServer(ports: Prompts.ports)
     var onChange: (() -> Void)?
 
     lazy var token: String = {
@@ -89,35 +88,13 @@ final class Prompts {
     }
 
     func start() {
-        guard listener == nil else { return }
-        listen(on: Self.port, tries: Self.ports.count)
+        server.onReady = { [weak self] in self?.adopt($0) }
+        server.onRequest = { [weak self] in self?.handle($0, $1) }
+        server.start(on: Self.port)
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
             self?.releaseIfWatched()
         }
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.expire() }
-    }
-
-    private func listen(on number: UInt16, tries: Int) {
-        guard tries > 0, let port = NWEndpoint.Port(rawValue: number) else { return }
-        let params = NWParameters.tcp
-        params.requiredLocalEndpoint = NWEndpoint.hostPort(host: .ipv4(.loopback), port: port)
-        guard let l = try? NWListener(using: params) else { return }
-        l.newConnectionHandler = { [weak self] c in self?.accept(c) }
-        l.stateUpdateHandler = { [weak self] state in
-            switch state {
-            case .ready:
-                self?.adopt(number)
-            case .failed:
-                l.cancel()
-                self?.listener = nil
-                let next = number >= Self.ports.upperBound ? Self.ports.lowerBound : number + 1
-                self?.listen(on: next, tries: tries - 1)
-            default:
-                break
-            }
-        }
-        l.start(queue: .main)
-        listener = l
     }
 
     private func adopt(_ number: UInt16) {
@@ -213,45 +190,18 @@ final class Prompts {
 
     // MARK: HTTP
 
-    private func accept(_ c: NWConnection) {
-        c.start(queue: .main)
-        read(c, Data())
-    }
-
-    private func read(_ c: NWConnection, _ buffer: Data) {
-        c.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { [weak self] data, _, done, error in
-            guard let self else { return }
-            var buffer = buffer
-            if let data { buffer.append(data) }
-            if let request = HTTPRequest(buffer) {
-                self.handle(request, c)
-            } else if !done, error == nil, buffer.count < 4 << 20 {
-                self.read(c, buffer)
-            } else {
-                c.cancel()
-            }
-        }
-    }
-
-    private func handle(_ r: HTTPRequest, _ c: NWConnection) {
-        let respond: (Data) -> Void = { body in
-            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
-            c.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in c.cancel() })
-        }
+    private func handle(_ r: HTTPRequest, _ x: HookServer.Exchange) {
         guard r.headers["x-muster-token"] == token,
               let input = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any],
-              let prompt = parse(r.path, input) else { respond(Data()); return }
+              let prompt = parse(r.path, input) else { x.reply(Data()); return }
         if prompt.blocksNative, let front = NSWorkspace.shared.frontmostApplication, isHost(front, of: prompt) {
-            respond(Data())
+            x.reply(Data())
             return
         }
         pending[prompt.id] = prompt
-        replies[prompt.id] = respond
+        replies[prompt.id] = x.reply
         raw[prompt.id] = input
-        c.stateUpdateHandler = { [weak self] state in
-            if case .cancelled = state { DispatchQueue.main.async { self?.drop(prompt.id); Store.shared.refreshPrompts() } }
-            if case .failed = state { DispatchQueue.main.async { self?.drop(prompt.id); Store.shared.refreshPrompts() } }
-        }
+        x.onClose { DispatchQueue.main.async { [weak self] in self?.drop(prompt.id); Store.shared.refreshPrompts() } }
         onChange?()
         Store.shared.refreshPrompts()
     }
@@ -284,31 +234,6 @@ final class Prompts {
     }
 }
 
-private struct HTTPRequest {
-    let path: String
-    let headers: [String: String]
-    let body: Data
-
-    /// A complete request with a Content-Length body, or nil if more bytes are needed.
-    init?(_ data: Data) {
-        guard let end = data.range(of: Data("\r\n\r\n".utf8)) else { return nil }
-        let head = String(decoding: data[..<end.lowerBound], as: UTF8.self).components(separatedBy: "\r\n")
-        let parts = head.first?.split(separator: " ") ?? []
-        guard parts.count >= 2 else { return nil }
-        var headers: [String: String] = [:]
-        for line in head.dropFirst() {
-            guard let colon = line.firstIndex(of: ":") else { continue }
-            headers[line[..<colon].lowercased()] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
-        }
-        let length = Int(headers["content-length"] ?? "0") ?? 0
-        let bodyStart = end.upperBound
-        guard data.count - (bodyStart - data.startIndex) >= length else { return nil }
-        path = String(parts[1])
-        self.headers = headers
-        body = data[bodyStart..<(bodyStart + length)]
-    }
-}
-
 // MARK: - Installing the hooks
 
 /// Adds Muster's hooks to each agent's own settings, and removes exactly those
@@ -316,22 +241,20 @@ private struct HTTPRequest {
 enum HookInstaller {
     static var claudeSettings: String { (ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"] ?? home + "/.claude") + "/settings.json" }
     static var codexHooks: String { (ProcessInfo.processInfo.environment["CODEX_HOME"] ?? home + "/.codex") + "/hooks.json" }
-    private static var base: String { "http://127.0.0.1:\(Prompts.port)" }
 
-    static func isInstalled(_ agent: Agent) -> Bool {
+    /// This install's hooks for the agent, if Muster answers it.
+    private static func hooks(_ agent: Agent) -> Hooks? {
         switch agent {
-        case .claude: return (try? String(contentsOfFile: claudeSettings, encoding: .utf8))?.contains(base + "/claude/") == true
-        case .codex: return (try? String(contentsOfFile: codexHooks, encoding: .utf8))?.contains(base + "/codex/") == true
-        case .cursor: return false
+        case .claude: return Hooks(agent: .claude, path: claudeSettings, port: Prompts.port, token: Prompts.shared.token)
+        case .codex: return Hooks(agent: .codex, path: codexHooks, port: Prompts.port, token: Prompts.shared.token)
+        case .cursor: return nil
         }
     }
 
-    /// Hooks from an earlier port, rewritten after the server had to move.
-    static func hasStale(_ agent: Agent) -> Bool {
-        let path = agent == .claude ? claudeSettings : agent == .codex ? codexHooks : ""
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
-        return text.contains("X-Muster-Token") && !isInstalled(agent)
-    }
+    static func isInstalled(_ agent: Agent) -> Bool { hooks(agent)?.isInstalled ?? false }
+    static func hasStale(_ agent: Agent) -> Bool { hooks(agent)?.isStale ?? false }
+    static func install(_ agent: Agent) throws { try hooks(agent)?.install() }
+    static func uninstall(_ agent: Agent) throws { try hooks(agent)?.uninstall() }
 
     static func displayPath(_ agent: Agent) -> String {
         let path = agent == .claude ? claudeSettings : codexHooks
@@ -341,7 +264,7 @@ enum HookInstaller {
     /// Names of programs other apps' Claude hooks point at that no longer exist.
     /// Each one fails on every hook event it's attached to.
     static func brokenClaudeHooks() -> [String] {
-        guard let d = settingsJSON(claudeSettings), let hooks = d["hooks"] as? [String: Any] else { return [] }
+        guard let d = SettingsFile.read(claudeSettings), let hooks = d["hooks"] as? [String: Any] else { return [] }
         var names: [String] = []
         for case let groups as [[String: Any]] in hooks.values {
             for group in groups {
@@ -356,7 +279,7 @@ enum HookInstaller {
     }
 
     static func removeBrokenClaudeHooks() throws {
-        try edit(claudeSettings) { d in
+        try SettingsFile.edit(claudeSettings) { d in
             var hooks = d["hooks"] as? [String: Any] ?? [:]
             for (event, value) in hooks {
                 let kept: [[String: Any]] = (value as? [[String: Any]] ?? []).compactMap { group in
@@ -386,82 +309,5 @@ enum HookInstaller {
         let path = expanded.hasPrefix("~/") ? home + expanded.dropFirst() : expanded
         guard path.hasPrefix("/"), !FileManager.default.fileExists(atPath: path) else { return nil }
         return path
-    }
-
-    private static func settingsJSON(_ path: String) -> [String: Any]? {
-        FileManager.default.contents(atPath: path).flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
-    }
-
-    static func install(_ agent: Agent) throws {
-        switch agent {
-        case .claude:
-            try edit(claudeSettings) { d in
-                var hooks = d["hooks"] as? [String: Any] ?? [:]
-                let header = ["X-Muster-Token": Prompts.shared.token]
-                hooks["PermissionRequest"] = strip(hooks["PermissionRequest"]) + [
-                    ["matcher": "*", "hooks": [["type": "http", "url": base + "/claude/permission", "timeout": 3600, "headers": header]]]]
-                hooks["PreToolUse"] = strip(hooks["PreToolUse"]) + [
-                    ["matcher": "AskUserQuestion|ExitPlanMode",
-                     "hooks": [["type": "http", "url": base + "/claude/question", "timeout": 3600, "headers": header]]]]
-                d["hooks"] = hooks
-            }
-        case .codex:
-            try edit(codexHooks) { d in
-                var hooks = d["hooks"] as? [String: Any] ?? [:]
-                let command = "/usr/bin/curl -s --max-time 3600 -X POST -H 'Content-Type: application/json' " +
-                    "-H 'X-Muster-Token: \(Prompts.shared.token)' --data-binary @- \(base)/codex/permission || true"
-                hooks["PermissionRequest"] = strip(hooks["PermissionRequest"]) + [
-                    ["hooks": [["type": "command", "command": command, "timeout": 3600]]]]
-                d["hooks"] = hooks
-            }
-        case .cursor:
-            break
-        }
-    }
-
-    static func uninstall(_ agent: Agent) throws {
-        let path = agent == .claude ? claudeSettings : agent == .codex ? codexHooks : ""
-        guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else { return }
-        try edit(path) { d in
-            var hooks = d["hooks"] as? [String: Any] ?? [:]
-            for (event, value) in hooks {
-                let kept = strip(value)
-                hooks[event] = kept.isEmpty ? nil : kept
-            }
-            d["hooks"] = hooks.isEmpty ? nil : hooks
-        }
-    }
-
-    /// The event's hook groups without any of Muster's.
-    private static func strip(_ value: Any?) -> [[String: Any]] {
-        (value as? [[String: Any]] ?? []).compactMap { group in
-            let handlers = (group["hooks"] as? [[String: Any]] ?? []).filter { h in
-                !((h["headers"] as? [String: Any])?["X-Muster-Token"] != nil
-                  || (h["url"] as? String)?.hasPrefix(base) == true
-                  || (h["command"] as? String)?.contains("X-Muster-Token") == true)
-            }
-            guard !handlers.isEmpty else { return nil }
-            var g = group
-            g["hooks"] = handlers
-            return g
-        }
-    }
-
-    private static func edit(_ path: String, _ change: (inout [String: Any]) -> Void) throws {
-        let fm = FileManager.default
-        var d: [String: Any] = [:]
-        if let data = fm.contents(atPath: path) {
-            guard let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                throw NSError(domain: "Muster", code: 1, userInfo: [NSLocalizedDescriptionKey: "\(path) isn't valid JSON, so Muster left it alone."])
-            }
-            d = parsed
-            try? fm.removeItem(atPath: path + ".muster-backup")
-            try fm.copyItem(atPath: path, toPath: path + ".muster-backup")
-        } else {
-            try fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
-        }
-        change(&d)
-        let out = try JSONSerialization.data(withJSONObject: d, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
-        try out.write(to: URL(fileURLWithPath: path), options: .atomic)
     }
 }
