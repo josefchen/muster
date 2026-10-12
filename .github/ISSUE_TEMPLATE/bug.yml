@@ -1,0 +1,24 @@
+name: Bug report
+description: Something isn't right
+body:
+  - type: textarea
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Muster did instead.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: macOS version
+      placeholder: macOS 26.1
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Which agent app
+      multiple: true
+      options: [Claude, Codex, Cursor]
+  - type: textarea
+    attributes:
+      label: Anything else
+      description: Never paste transcripts or session contents.

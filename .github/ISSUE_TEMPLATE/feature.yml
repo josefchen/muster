@@ -1,0 +1,12 @@
+name: Idea
+description: Suggest something Muster should do
+body:
+  - type: textarea
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way today?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What you'd like
