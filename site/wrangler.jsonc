@@ -1,0 +1,13 @@
+// The landing page at agentmuster.app: static files only, built into ./dist by
+// scripts/site.sh. www.agentmuster.app is a separate redirect Worker in ./www.
+{
+  "name": "agentmuster",
+  "compatibility_date": "2026-10-09",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "agentmuster.app", "custom_domain": true }]
+}

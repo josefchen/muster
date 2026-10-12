@@ -1,0 +1,9 @@
+// Sends www.agentmuster.app to agentmuster.app, keeping the path.
+{
+  "name": "agentmuster-www",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-09",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "www.agentmuster.app", "custom_domain": true }]
+}
