@@ -7,7 +7,7 @@ APP="${1:-$HOME/Applications/Muster.app}"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -swift-version 5 -target arm64-apple-macos14 -o "$APP/Contents/MacOS/Muster" "$HERE"/Sources/*.swift
 cp "$HERE/Resources/Info.plist" "$APP/Contents/Info.plist"
-[ -f "$HERE/Resources/AppIcon.icns" ] && cp "$HERE/Resources/AppIcon.icns" "$APP/Contents/Resources/"
+cp "$HERE/Resources/AppIcon.icns" "$HERE/Resources/intro.mp4" "$APP/Contents/Resources/"
 codesign --force --sign - "$APP" >/dev/null
 
 pkill -x Muster 2>/dev/null || true

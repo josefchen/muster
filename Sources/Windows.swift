@@ -2,24 +2,16 @@ import AppKit
 import SwiftUI
 import UserNotifications
 
-// Settings and the first-run welcome, in SwiftUI's native grouped form so they
-// look like System Settings. Built only when opened; the always-on paths
-// (menu bar, switcher, deck) stay plain AppKit.
+// Settings, in SwiftUI's native grouped form so it looks like System Settings.
+// Built only when opened; the always-on paths (menu bar, switcher, deck) stay
+// plain AppKit.
 
 final class Windows {
     private var settingsWindow: NSWindow?
-    private var welcomeWindow: NSWindow?
 
     func show() {
         let w = settingsWindow ?? window("Muster Settings", SettingsView(), size: NSSize(width: 460, height: 560))
         settingsWindow = w
-        present(w)
-    }
-
-    func welcome() {
-        let w = welcomeWindow ?? window("Welcome to Muster", WelcomeView { [weak self] in self?.welcomeWindow?.close() },
-                                        size: NSSize(width: 460, height: 520))
-        welcomeWindow = w
         present(w)
     }
 
@@ -50,6 +42,7 @@ private struct SettingsView: View {
     @State private var notifications: UNAuthorizationStatus = .notDetermined
     @State private var answering: [Agent: Bool] = [:]
     @State private var answerError: String?
+    @State private var broken: [String] = []
     private let tick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -105,6 +98,18 @@ private struct SettingsView: View {
                     }
                 }
                 if let answerError { Text(answerError).font(.callout).foregroundStyle(.orange) }
+                if !broken.isEmpty {
+                    HStack {
+                        Text("\(broken.joined(separator: ", ")) is gone, but its Claude hooks still run and fail.")
+                            .font(.callout).foregroundStyle(.orange)
+                        Spacer()
+                        Button("Remove") {
+                            do { try HookInstaller.removeBrokenClaudeHooks(); answerError = nil }
+                            catch { answerError = error.localizedDescription }
+                            refresh()
+                        }
+                    }
+                }
             } header: {
                 Text("Answer prompts from Muster")
             } footer: {
@@ -121,8 +126,10 @@ private struct SettingsView: View {
                         Text(notifications == .denied ? "Notifications are turned off for Muster." : "Muster hasn't been allowed to notify you yet.")
                             .font(.callout).foregroundStyle(.secondary)
                         Spacer()
-                        Button("Open Settings") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+                        if notifications == .denied {
+                            Button("Open Settings", action: Notifier.openSystemSettings)
+                        } else {
+                            Button("Allow…") { Notifier.requestAuthorization(refresh) }
                         }
                     }
                 }
@@ -145,9 +152,8 @@ private struct SettingsView: View {
     private func refresh() {
         sources = Store.shared.sources
         answering = [.claude: HookInstaller.isInstalled(.claude), .codex: HookInstaller.isInstalled(.codex)]
-        UNUserNotificationCenter.current().getNotificationSettings { s in
-            DispatchQueue.main.async { notifications = s.authorizationStatus }
-        }
+        broken = HookInstaller.brokenClaudeHooks()
+        Notifier.status { notifications = $0 }
     }
 
     private func sourceText(_ agent: Agent) -> String {
@@ -171,48 +177,5 @@ private struct SettingsView: View {
             try? enc.encode(Pricing.builtIn).write(to: file)
         }
         NSWorkspace.shared.activateFileViewerSelecting([file])
-    }
-}
-
-private struct WelcomeView: View {
-    let done: () -> Void
-
-    var body: some View {
-        VStack(spacing: 22) {
-            Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96).padding(.top, 34)
-            VStack(spacing: 6) {
-                Text("Muster").font(.system(size: 30, weight: .bold))
-                Text("Every agent, one glance.").font(.title3).foregroundStyle(.secondary)
-            }
-            VStack(alignment: .leading, spacing: 16) {
-                Feature(symbol: "rectangle.stack", title: "Lives in your menu bar",
-                        text: "A count appears when a Claude, Codex or Cursor session is waiting on you.")
-                Feature(symbol: "command", title: "\(Hotkeys.shared.switcher.display) to switch",
-                        text: "Hold \(Hotkeys.shared.switcher.symbols) and tap \(Hotkeys.shared.switcher.key) to walk your sessions. Let go to open one.")
-                Feature(symbol: "checkmark.bubble", title: "Answer from anywhere",
-                        text: "Allow a command or pick an answer without leaving what you're doing. Turn it on in Settings.")
-                Feature(symbol: "magnifyingglass", title: "\(Hotkeys.shared.search.display) to search",
-                        text: "Find any session from the last three hours by name or project.")
-            }
-            .padding(.horizontal, 44)
-            Spacer(minLength: 0)
-            Button(action: done) { Text("Get Started").frame(width: 200) }
-                .controlSize(.large).keyboardShortcut(.defaultAction).padding(.bottom, 30)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-private struct Feature: View {
-    let symbol: String, title: String, text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
-            Image(systemName: symbol).font(.system(size: 20)).foregroundStyle(.tint).frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.headline)
-                Text(text).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }

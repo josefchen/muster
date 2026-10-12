@@ -244,7 +244,7 @@ final class SessionList: Flipped {
         highlight.layer?.backgroundColor = s.agent.colour.withAlphaComponent(0.16).cgColor
         highlight.layer?.borderColor = s.agent.colour.withAlphaComponent(0.45).cgColor
         let target = rowFrames[selected]
-        if animated, highlight.frame != .zero {
+        if animated, highlight.frame != .zero, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.14
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)

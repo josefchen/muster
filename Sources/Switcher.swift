@@ -20,6 +20,11 @@ final class Switcher {
     private var globalMouse: Any?
     private var pointing = false
 
+    /// The tour's practice run: letting go or clicking closes instead of opening.
+    var practice = false
+    var onShow: (() -> Void)?
+    var onPractice: (() -> Void)?
+
     init() {
         hint.alignment = .center
         hint.stringValue = Self.hintText
@@ -58,6 +63,7 @@ final class Switcher {
         Hotkeys.shared.answerKeys(true)
         hint.stringValue = Self.hintText
         snapshot = Self.pick(Store.shared.sessions)
+        if practice && snapshot.isEmpty { snapshot = Self.pick(Session.samples) }
         layout()
         watchRelease()
         watchPointer()
@@ -93,8 +99,9 @@ final class Switcher {
         panel.orderFrontRegardless()
         panel.makeKey()
         panel.invalidateShadow()
+        onShow?()
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.12
+            ctx.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
             ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
             panel.animator().alphaValue = 1
         }
@@ -107,7 +114,7 @@ final class Switcher {
             guard let self, !held.isSuperset(of: Hotkeys.shared.switcher.flags.subtracting(.shift)) else { return }
             let chosen = self.snapshot.indices.contains(self.list.selected) ? self.snapshot[self.list.selected] : nil
             self.end()
-            if let chosen { Opener.open(chosen) }
+            if self.practice { self.onPractice?() } else if let chosen { Opener.open(chosen) }
         }
     }
 
@@ -150,7 +157,7 @@ final class Switcher {
         guard active, snapshot.indices.contains(i) else { return }
         let chosen = snapshot[i]
         end()
-        Opener.open(chosen)
+        if practice { onPractice?() } else { Opener.open(chosen) }
     }
 
     private func end() {

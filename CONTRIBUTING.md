@@ -8,7 +8,7 @@ Thanks for helping. A few things keep Muster fast and trustworthy.
 - If you touch a reader, add a case to `Tests/main.swift` using fixture files. Never
   commit real transcripts.
 - If you change how something looks, regenerate the screenshots and video with
-  `scripts/capture.sh` and `scripts/record.sh` (they run Muster in demo mode) and
+  `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` (they run Muster in demo mode) and
   check them in light and dark mode.
 
 ## Principles

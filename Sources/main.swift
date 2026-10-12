@@ -28,6 +28,8 @@ final class StatusItem: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     var onClick: ((NSRect?) -> Void)?
     var onSettings: (() -> Void)?
+    var onTour: (() -> Void)?
+    private var callout: GlassPanel?
 
     override init() {
         super.init()
@@ -77,6 +79,7 @@ final class StatusItem: NSObject {
             }
             if !Hotkeys.shared.conflicts.isEmpty { menu.addItem(.separator()) }
             menu.addItem(withTitle: "About Muster", action: #selector(about), keyEquivalent: "").target = self
+            menu.addItem(withTitle: "Welcome Tour…", action: #selector(tour), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
             menu.addItem(.separator())
             menu.addItem(withTitle: "Quit Muster", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -90,6 +93,54 @@ final class StatusItem: NSObject {
     }
 
     @objc private func settings() { onSettings?() }
+    @objc private func tour() { onTour?() }
+
+    /// After the tour: point at the icon, or explain where Muster went if the
+    /// menu bar is too full to show it.
+    func showCallout() {
+        let visible = item.button?.window.map(Self.onScreen) ?? false
+        let keys = Hotkeys.shared
+        let title = visible ? "Muster lives here" : "Your menu bar is full"
+        let detail = visible ? "\(keys.switcher.display) to switch  ·  \(keys.search.display) to search"
+                             : "Muster's icon is hidden. \(keys.search.display) always opens it."
+        let panel = callout ?? GlassPanel(cornerRadius: 16, canBecomeKey: false)
+        callout = panel
+        panel.ignoresMouseEvents = true
+        panel.content.subviews.forEach { $0.removeFromSuperview() }
+        let top = label(13, .semibold), bottom = label(11.5, .medium, .secondaryLabelColor)
+        set(top, title)
+        set(bottom, detail)
+        [top, bottom].forEach { $0.alignment = .center; panel.content.addSubview($0) }
+        let width = max(top.intrinsicContentSize.width, bottom.intrinsicContentSize.width) + 36
+        let size = NSSize(width: width, height: 58)
+        top.frame = NSRect(x: 0, y: 11, width: width, height: 17)
+        bottom.frame = NSRect(x: 0, y: 31, width: width, height: 15)
+        let origin: NSPoint
+        if visible, let anchor = item.button?.window?.frame {
+            let area = NSScreen.screens.first { $0.frame.intersects(anchor) }?.visibleFrame ?? .zero
+            origin = NSPoint(x: min(max(anchor.midX - width / 2, area.minX + 8), area.maxX - width - 8), y: anchor.minY - size.height - 8)
+        } else {
+            let area = NSScreen.main?.visibleFrame ?? .zero
+            origin = NSPoint(x: area.midX - width / 2, y: area.maxY - size.height - 12)
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: false)
+        panel.alphaValue = 0
+        panel.orderFrontRegardless()
+        panel.invalidateShadow()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.25; panel.animator().alphaValue = 1 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (visible ? 5 : 9)) { [weak panel] in
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.4; panel?.animator().alphaValue = 0 }) { panel?.orderOut(nil) }
+        }
+    }
+
+    /// Off screen, behind the notch, or pushed out by a menu bar manager.
+    private static func onScreen(_ w: NSWindow) -> Bool {
+        let f = w.frame
+        guard w.occlusionState.contains(.visible), let screen = NSScreen.screens.first(where: { $0.frame.contains(f) }) else { return false }
+        guard let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea else { return true }
+        let x = f.midX - screen.frame.minX
+        return x <= left.maxX || x >= right.minX
+    }
 
     @objc private func about() {
         NSApp.activate(ignoringOtherApps: true)
@@ -106,15 +157,30 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     override init() {
         super.init()
-        let center = UNUserNotificationCenter.current()
-        center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
-            if let error { FileHandle.standardError.write(Data("muster: notifications unavailable: \(error.localizedDescription)\n".utf8)) }
-            else if !granted { FileHandle.standardError.write(Data("muster: notifications declined\n".utf8)) }
-        }
+        UNUserNotificationCenter.current().delegate = self
         registerCategories()
         Store.shared.observe { [weak self] in self?.diff($0) }
         Prompts.shared.onChange = { [weak self] in self?.syncPrompts() }
+    }
+
+    /// Asked from the tour or Settings, when the reason is on screen, never at launch.
+    static func requestAuthorization(_ done: @escaping () -> Void) {
+        guard Bundle.main.bundleIdentifier != nil else { return done() }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
+            DispatchQueue.main.async(execute: done)
+        }
+    }
+
+    static func status(_ done: @escaping (UNAuthorizationStatus) -> Void) {
+        guard Bundle.main.bundleIdentifier != nil else { return done(.notDetermined) }
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            DispatchQueue.main.async { done(s.authorizationStatus) }
+        }
+    }
+
+    static func openSystemSettings() {
+        let id = Bundle.main.bundleIdentifier ?? ""
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(id)")!)
     }
 
     private func diff(_ sessions: [Session]) {
@@ -222,10 +288,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var deck: Deck!
     let settings = Windows()
     private var notifier: Notifier?
+    private var welcome: Welcome!
 
     func deckToggle() { deck.toggle(below: nil) }
 
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        settings.show()
+        return false
+    }
+
     func applicationDidFinishLaunching(_ n: Notification) {
+        if !Store.demo, Installer.handOffIfRunning() || Installer.offerMove() { NSApp.terminate(nil); return }
+        DistributedNotificationCenter.default().addObserver(forName: Installer.reopen, object: nil, queue: .main) { [weak self] _ in
+            self?.settings.show()
+        }
         Store.shared.start()
         if !Store.demo { Prompts.shared.start() }
         switcher = Switcher()
@@ -234,6 +310,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         status.onClick = { [weak self] anchor in self?.deck.toggle(below: anchor) }
         status.onSettings = { [weak self] in self?.settings.show() }
         deck.onSettings = { [weak self] in self?.settings.show() }
+        welcome = Welcome(switcher: switcher, deck: deck) { [weak self] in self?.status.showCallout() }
+        status.onTour = { [weak self] in self?.welcome.show() }
         Hotkeys.shared.install { [weak self] action in
             guard let self else { return }
             switch action {
@@ -248,16 +326,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Store.demo, CommandLine.arguments.contains("--backdrop") { Demo.showBackdrop() }
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
-        if !UserDefaults.standard.bool(forKey: "launched") && !Store.demo {
-            UserDefaults.standard.set(true, forKey: "launched")
-            Settings.launchAtLogin = true
-            settings.welcome()
+        if !UserDefaults.standard.bool(forKey: "launched") && (!Store.demo || CommandLine.arguments.contains("--welcome")) {
+            welcome.show()
         }
     }
 }
 
 extension AppDelegate {
-    /// muster://search, muster://settings, muster://next (the most urgent session),
+    /// muster://search, muster://settings, muster://welcome, muster://next (the most urgent session),
     /// muster://open?id=claude:<session id>. For Raycast, Alfred and Shortcuts.
     @objc func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
@@ -265,6 +341,7 @@ extension AppDelegate {
         switch url.host {
         case "search": deckToggle()
         case "settings": settings.show()
+        case "welcome": welcome.show()
         case "next": if let s = Store.shared.sessions.first { Opener.open(s) }
         case "open":
             let id = url.queryItems?.first { $0.name == "id" }?.value

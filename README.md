@@ -92,7 +92,7 @@ Muster adds one hook to the agent's own settings, keeps a backup, and removes ex
 | <kbd>⌥</kbd> <kbd>↩</kbd> · <kbd>⌥</kbd> <kbd>⌫</kbd> · <kbd>⌥</kbd> <kbd>1</kbd>–<kbd>9</kbd> | Allow · deny · answer the selected prompt |
 | <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>Space</kbd> | Search every session |
 
-Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`.
+Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`, `muster://welcome`.
 
 <details>
 <summary><b>How it works</b></summary>
@@ -138,7 +138,7 @@ git clone https://github.com/josefchen/muster.git && cd muster
 ./test.sh             # reader tests against fixture files
 ```
 
-`scripts/release.sh <version>` builds a universal, signed and notarized DMG. `scripts/capture.sh` and `scripts/record.sh` regenerate the screenshots and video from demo mode (`Muster --demo`).
+`scripts/release.sh <version>` builds a universal, signed and notarized DMG. `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` regenerate the screenshots, the video and the welcome tour from demo mode (`Muster --demo`).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

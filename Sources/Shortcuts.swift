@@ -11,6 +11,7 @@ struct Shortcut: Codable, Equatable {
 
     static let switcherDefault = Shortcut(keyCode: UInt32(kVK_Tab), modifiers: UInt32(optionKey), key: "Tab")
     static let searchDefault = Shortcut(keyCode: UInt32(kVK_Space), modifiers: UInt32(optionKey | controlKey), key: "Space")
+    static let switcherAlternative = Shortcut(keyCode: UInt32(kVK_Tab), modifiers: UInt32(optionKey | controlKey), key: "Tab")
 
     var symbols: String {
         var s = ""

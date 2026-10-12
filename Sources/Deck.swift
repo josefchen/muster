@@ -20,6 +20,8 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
     private var selectedID: String?
 
     var onSettings: (() -> Void)?
+    var onShow: (() -> Void)?
+    var onHide: (() -> Void)?
     var isVisible: Bool { panel.isVisible }
 
     override init() {
@@ -84,12 +86,14 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
         panel.makeFirstResponder(search)
+        onShow?()
     }
 
     func hide() {
         panel.orderOut(nil)
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        onHide?()
     }
 
     /// ⌥Return allows, ⌥⇧Return always allows, ⌥Delete denies, ⌥1–9 answers, for the
