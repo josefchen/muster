@@ -288,6 +288,54 @@ check(closed(after, wait: 3)?.hasPrefix("HTTP/1.1 200 OK") == true, "and the ser
 close(after)
 serverQueue.sync { server.stop() }
 
+print("Whose hooks")
+let tokenA = String(repeating: "a", count: 32), tokenB = String(repeating: "b", count: 32), tokenC = String(repeating: "c", count: 32)
+func text(_ path: String) -> String { (try? String(contentsOfFile: path, encoding: .utf8)) ?? "" }
+func object(_ path: String) -> [String: Any] { SettingsFile.read(path) ?? [:] }
+func groups(_ path: String, _ event: String) -> [[String: Any]] { (object(path)["hooks"] as? [String: Any])?[event] as? [[String: Any]] ?? [] }
+func userGroup(_ name: String) -> [String: Any] { ["matcher": name, "hooks": [["type": "command", "command": "/usr/bin/true \(name)"]]] }
+
+let shared = root + "/whose/.claude/settings.json"
+write("/whose/.claude/settings.json", json(["hooks": ["PermissionRequest": [userGroup("Bash")]]]))
+let real = Hooks(agent: .claude, path: shared, port: 47621, token: tokenA)
+try! real.install()
+let other = Hooks(agent: .claude, path: shared, port: 47623, token: tokenB)
+let samePort = Hooks(agent: .claude, path: shared, port: 47621, token: tokenB)
+check(real.isInstalled && !other.isInstalled && !samePort.isInstalled, "only the install whose token the hooks carry counts them as its own")
+check(!other.isStale, "another build's hooks aren't stale to this one")
+if other.isStale { try? other.repoint() }
+check(text(shared).contains("47621/claude/permission") && text(shared).contains(tokenA) && !text(shared).contains(tokenB),
+      "so a second build on another port leaves the real hooks alone")
+
+let moved = Hooks(agent: .claude, path: shared, port: 47622, token: tokenA)
+check(moved.isStale && !moved.isInstalled, "this install's hooks on an earlier port are stale")
+let foreign: [String: Any] = ["matcher": "*", "hooks": [["type": "http", "url": "http://127.0.0.1:47630/claude/permission",
+                                                          "timeout": 3600, "headers": ["X-Muster-Token": tokenC]]]]
+try! SettingsFile.edit(shared) { d in
+    var hooks = d["hooks"] as! [String: Any]
+    hooks["PermissionRequest"] = (hooks["PermissionRequest"] as! [Any]) + [userGroup("Later"), foreign]
+    d["hooks"] = hooks
+}
+try! moved.repoint()
+let order = groups(shared, "PermissionRequest")
+check(moved.isInstalled && !moved.isStale && !text(shared).contains("47621"), "repointing moves this install's hooks to the new port")
+check(order.count == 4 && (order[0] as NSDictionary) == (userGroup("Bash") as NSDictionary)
+      && ((order[1]["hooks"] as? [[String: Any]])?.first?["url"] as? String)?.contains("47622") == true
+      && (order[2] as NSDictionary) == (userGroup("Later") as NSDictionary) && (order[3] as NSDictionary) == (foreign as NSDictionary),
+      "and leaves every other hook, another build's included, where it was")
+
+let codexShared = root + "/whose/.codex/hooks.json"
+let codexReal = Hooks(agent: .codex, path: codexShared, port: 47621, token: tokenA)
+try! codexReal.install()
+let codexOther = Hooks(agent: .codex, path: codexShared, port: 47623, token: tokenB)
+let codexMoved = Hooks(agent: .codex, path: codexShared, port: 47622, token: tokenA)
+check(codexReal.isInstalled && !codexOther.isInstalled && !codexOther.isStale && codexMoved.isStale, "the same goes for Codex's hooks")
+try! codexMoved.repoint()
+check(codexMoved.isInstalled && !text(codexShared).contains("47621"), "and repointing moves Codex's hook too")
+try! other.uninstall()
+check(!text(shared).contains("X-Muster-Token") && groups(shared, "PermissionRequest").count == 2,
+      "turning hooks off removes any Muster's, and only those")
+
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

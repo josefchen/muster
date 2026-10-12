@@ -97,11 +97,13 @@ final class Prompts {
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.expire() }
     }
 
+    /// Keeps the port the server got, and points this install's hooks at it.
+    /// Another build's hooks, with another token, stay as they are.
     private func adopt(_ number: UInt16) {
         guard number != Self.port || UserDefaults.standard.integer(forKey: "hookPort") == 0 else { return }
         Self.port = number
         UserDefaults.standard.set(Int(number), forKey: "hookPort")
-        for agent in [Agent.claude, .codex] where HookInstaller.hasStale(agent) { try? HookInstaller.install(agent) }
+        for agent in [Agent.claude, .codex] where HookInstaller.hasStale(agent) { try? HookInstaller.repoint(agent) }
     }
 
     // MARK: answering
@@ -254,6 +256,7 @@ enum HookInstaller {
     static func isInstalled(_ agent: Agent) -> Bool { hooks(agent)?.isInstalled ?? false }
     static func hasStale(_ agent: Agent) -> Bool { hooks(agent)?.isStale ?? false }
     static func install(_ agent: Agent) throws { try hooks(agent)?.install() }
+    static func repoint(_ agent: Agent) throws { try hooks(agent)?.repoint() }
     static func uninstall(_ agent: Agent) throws { try hooks(agent)?.uninstall() }
 
     static func displayPath(_ agent: Agent) -> String {

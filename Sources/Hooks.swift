@@ -89,8 +89,10 @@ enum SettingsFile {
 
 // MARK: - Muster's hooks
 
-/// Muster's hooks in one agent's settings file, for the install that calls
-/// `port` with `token`.
+/// Muster's hooks in one agent's settings file, for the install that listens on
+/// `port`. Each install has its own token, and a hook is that install's only if
+/// it carries it, so a second copy of Muster (a test build has its own defaults)
+/// never takes the hooks of the one you use.
 struct Hooks {
     let agent: Agent
     let path: String
@@ -98,45 +100,105 @@ struct Hooks {
     let token: String
 
     var base: String { "http://127.0.0.1:\(port)" }
-    private var route: String { base + (agent == .codex ? "/codex/" : "/claude/") }
 
-    var isInstalled: Bool {
-        (try? String(contentsOfFile: path, encoding: .utf8))?.contains(route) == true
-    }
+    /// This install's hooks are there and call this port.
+    var isInstalled: Bool { mine.contains(where: calls) }
 
-    /// Hooks from an earlier port, rewritten after the server had to move.
-    var isStale: Bool {
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return false }
-        return text.contains("X-Muster-Token") && !isInstalled
-    }
+    /// This install's hooks call an earlier port: the server had to move.
+    var isStale: Bool { mine.contains { !calls($0) } }
 
-    func install() throws {
-        switch agent {
-        case .claude:
-            try SettingsFile.edit(path) { d in
-                var hooks = d["hooks"] as? [String: Any] ?? [:]
-                let header = ["X-Muster-Token": token]
-                hooks["PermissionRequest"] = strip(hooks["PermissionRequest"]) + [
-                    ["matcher": "*", "hooks": [["type": "http", "url": base + "/claude/permission", "timeout": 3600, "headers": header]]]]
-                hooks["PreToolUse"] = strip(hooks["PreToolUse"]) + [
-                    ["matcher": "AskUserQuestion|ExitPlanMode",
-                     "hooks": [["type": "http", "url": base + "/claude/question", "timeout": 3600, "headers": header]]]]
-                d["hooks"] = hooks
-            }
-        case .codex:
-            try SettingsFile.edit(path) { d in
-                var hooks = d["hooks"] as? [String: Any] ?? [:]
-                let command = "/usr/bin/curl -s --max-time 3600 -X POST -H 'Content-Type: application/json' " +
-                    "-H 'X-Muster-Token: \(token)' --data-binary @- \(base)/codex/permission || true"
-                hooks["PermissionRequest"] = strip(hooks["PermissionRequest"]) + [
-                    ["hooks": [["type": "command", "command": command, "timeout": 3600]]]]
-                d["hooks"] = hooks
-            }
-        case .cursor:
-            break
+    /// The handler Muster adds for an event, or nil for events it doesn't use.
+    private func handler(for event: String) -> [String: Any]? {
+        switch (agent, event) {
+        case (.claude, "PermissionRequest"):
+            return ["type": "http", "url": base + "/claude/permission", "timeout": 3600, "headers": ["X-Muster-Token": token]]
+        case (.claude, "PreToolUse"):
+            return ["type": "http", "url": base + "/claude/question", "timeout": 3600, "headers": ["X-Muster-Token": token]]
+        case (.codex, "PermissionRequest"):
+            let command = "/usr/bin/curl -s --max-time 3600 -X POST -H 'Content-Type: application/json' " +
+                "-H 'X-Muster-Token: \(token)' --data-binary @- \(base)/codex/permission || true"
+            return ["type": "command", "command": command, "timeout": 3600]
+        default:
+            return nil
         }
     }
 
+    /// Muster's hook group for each event it uses.
+    private var groups: [(event: String, group: [String: Any])] {
+        switch agent {
+        case .claude:
+            return [("PermissionRequest", ["matcher": "*", "hooks": [handler(for: "PermissionRequest")!]]),
+                    ("PreToolUse", ["matcher": "AskUserQuestion|ExitPlanMode", "hooks": [handler(for: "PreToolUse")!]])]
+        case .codex:
+            return [("PermissionRequest", ["hooks": [handler(for: "PermissionRequest")!]])]
+        case .cursor:
+            return []
+        }
+    }
+
+    /// This install's handlers in the file.
+    private var mine: [[String: Any]] {
+        guard let hooks = SettingsFile.read(path)?["hooks"] as? [String: Any] else { return [] }
+        return hooks.values.flatMap { value in
+            (value as? [Any] ?? []).flatMap { group in
+                ((group as? [String: Any])?["hooks"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
+            }
+        }.filter(isMine)
+    }
+
+    private func isMine(_ h: [String: Any]) -> Bool {
+        guard !token.isEmpty else { return false }
+        return (h["headers"] as? [String: Any])?["X-Muster-Token"] as? String == token
+            || (h["command"] as? String)?.contains("X-Muster-Token: \(token)'") == true
+    }
+
+    private func calls(_ h: [String: Any]) -> Bool {
+        (h["url"] as? String)?.hasPrefix(base + "/") == true || (h["command"] as? String)?.contains(" \(base)/") == true
+    }
+
+    /// Any Muster's handler, this install's or another's.
+    private func isMuster(_ h: [String: Any]) -> Bool {
+        (h["headers"] as? [String: Any])?["X-Muster-Token"] != nil
+            || (h["url"] as? String)?.hasPrefix(base + "/") == true
+            || (h["command"] as? String)?.contains("X-Muster-Token") == true
+    }
+
+    /// Adds this install's hooks, replacing any Muster's: two answering the
+    /// same prompt would race.
+    func install() throws {
+        guard agent != .cursor else { return }
+        try SettingsFile.edit(path) { d in
+            var hooks = d["hooks"] as? [String: Any] ?? [:]
+            for (event, group) in groups {
+                hooks[event] = strip(hooks[event]) + [group]
+            }
+            d["hooks"] = hooks
+        }
+    }
+
+    /// Points this install's stale hooks at the current port, each where it
+    /// was. Runs without asking, so it touches nothing else, not even another
+    /// Muster's hooks.
+    func repoint() throws {
+        guard isStale else { return }
+        try SettingsFile.edit(path) { d in
+            guard var hooks = d["hooks"] as? [String: Any] else { return }
+            for (event, value) in hooks {
+                guard let fresh = handler(for: event), let list = value as? [Any] else { continue }
+                hooks[event] = list.map { item -> Any in
+                    guard var group = item as? [String: Any], let handlers = group["hooks"] as? [Any] else { return item }
+                    group["hooks"] = handlers.map { h -> Any in
+                        guard let h = h as? [String: Any], isMine(h) else { return h }
+                        return fresh
+                    }
+                    return group
+                }
+            }
+            d["hooks"] = hooks
+        }
+    }
+
+    /// Removes any Muster's hooks, so turning it off always leaves none behind.
     func uninstall() throws {
         guard agent != .cursor, FileManager.default.fileExists(atPath: path) else { return }
         try SettingsFile.edit(path) { d in
@@ -152,11 +214,7 @@ struct Hooks {
     /// The event's hook groups without any of Muster's.
     private func strip(_ value: Any?) -> [[String: Any]] {
         (value as? [[String: Any]] ?? []).compactMap { group in
-            let handlers = (group["hooks"] as? [[String: Any]] ?? []).filter { h in
-                !((h["headers"] as? [String: Any])?["X-Muster-Token"] != nil
-                  || (h["url"] as? String)?.hasPrefix(base) == true
-                  || (h["command"] as? String)?.contains("X-Muster-Token") == true)
-            }
+            let handlers = (group["hooks"] as? [[String: Any]] ?? []).filter { !isMuster($0) }
             guard !handlers.isEmpty else { return nil }
             var g = group
             g["hooks"] = handlers
