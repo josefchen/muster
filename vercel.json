@@ -1,0 +1,9 @@
+{
+  "buildCommand": "mkdir -p site/media && cp docs/media/* site/media/",
+  "outputDirectory": "site",
+  "framework": null,
+  "cleanUrls": true,
+  "headers": [
+    { "source": "/media/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] }
+  ]
+}

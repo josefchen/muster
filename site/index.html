@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muster: every agent, one glance</title>
+<meta name="description" content="A native Mac menu bar app for Claude, Codex and Cursor. See who needs you, answer from anywhere, ⌥Tab between agents, and know what they cost.">
+<meta property="og:title" content="Muster: every agent, one glance">
+<meta property="og:description" content="A native Mac switcher for your Claude, Codex and Cursor sessions. Free and open source.">
+<meta property="og:image" content="/media/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#08080b">
+<link rel="icon" href="/media/icon.png">
+<style>
+  :root {
+    --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #4a4a52; --line: rgba(255,255,255,.08);
+    --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; }
+  body { font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; overflow-x: hidden; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+
+  nav { position: fixed; inset: 0 0 auto; z-index: 10; backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px); background: rgba(8,8,11,.6); border-bottom: 1px solid var(--line); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
+  .brand img { width: 26px; height: 26px; }
+  nav .links { display: flex; gap: 26px; align-items: center; font-size: 14px; color: var(--dim); }
+  nav .links a:hover { color: var(--fg); }
+  .pill { color: var(--fg) !important; background: rgba(255,255,255,.1); padding: 7px 14px; border-radius: 999px; }
+
+  header { position: relative; padding: 150px 0 40px; text-align: center; }
+  .glow { position: absolute; inset: -10% 0 auto; height: 900px; z-index: -1; pointer-events: none;
+          background: radial-gradient(40% 35% at 30% 30%, rgba(158,102,250,.28), transparent 70%),
+                      radial-gradient(35% 30% at 70% 25%, rgba(238,140,51,.22), transparent 70%),
+                      radial-gradient(45% 35% at 55% 55%, rgba(69,133,250,.22), transparent 70%); filter: blur(10px); }
+  .icon { width: 96px; height: 96px; margin-bottom: 30px; filter: drop-shadow(0 20px 40px rgba(0,0,0,.5)); }
+  h1 { font-size: clamp(48px, 8vw, 92px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
+  h1 span { background: linear-gradient(90deg, var(--claude), var(--cursor) 55%, var(--codex)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { margin: 22px auto 0; max-width: 560px; font-size: 21px; color: var(--dim); letter-spacing: -.01em; }
+  .ctas { margin-top: 36px; display: flex; gap: 14px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 10px; background: var(--fg); color: #000; font-weight: 600;
+         padding: 14px 24px; border-radius: 14px; font-size: 16px; transition: transform .15s ease; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn svg { width: 17px; height: 17px; }
+  .brew { display: inline-flex; align-items: center; gap: 12px; font: 14px/1 ui-monospace, "SF Mono", Menlo, monospace;
+          color: var(--dim); border: 1px solid var(--line); padding: 15px 18px; border-radius: 14px; cursor: pointer; background: rgba(255,255,255,.03); }
+  .brew b { color: var(--fg); font-weight: 500; }
+  .brew:hover { border-color: rgba(255,255,255,.18); }
+  .meta { margin-top: 18px; font-size: 13px; color: var(--faint); }
+
+  .stage { margin: 70px auto 0; max-width: 920px; border-radius: 22px; overflow: hidden; position: relative;
+           box-shadow: 0 60px 120px -30px rgba(0,0,0,.8), 0 0 0 1px var(--line); }
+  .stage video, .stage img { display: block; width: 100%; height: auto; }
+
+  section { padding: 140px 0 0; }
+  .feature { display: grid; grid-template-columns: 1fr 1.25fr; gap: 64px; align-items: center; }
+  .feature.flip { grid-template-columns: 1.25fr 1fr; }
+  .feature.flip .copy { order: 2; }
+  .kicker { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-bottom: 14px; }
+  h2 { font-size: clamp(34px, 4.6vw, 52px); line-height: 1.05; letter-spacing: -.035em; font-weight: 700; }
+  .copy p { margin-top: 18px; color: var(--dim); font-size: 19px; max-width: 420px; }
+  kbd { font: 600 15px/1 -apple-system, system-ui, sans-serif; color: var(--fg); background: rgba(255,255,255,.08);
+        border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 7px; padding: 3px 8px; margin: 0 1px; }
+  .shot { border-radius: 18px; overflow: hidden; box-shadow: 0 40px 90px -30px rgba(0,0,0,.8), 0 0 0 1px var(--line); }
+  .shot img, .shot video { display: block; width: 100%; height: auto; }
+
+  .agents { display: flex; gap: 10px; margin-top: 26px; }
+  .agents span { font-size: 13px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); }
+  .agents i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: 1px; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .stats div { padding: 46px 10px; text-align: center; }
+  .stats div + div { border-left: 1px solid var(--line); }
+  .stats b { display: block; font-size: 40px; letter-spacing: -.03em; font-weight: 700; }
+  .stats span { color: var(--dim); font-size: 14px; }
+
+  .closer { text-align: center; padding: 160px 0 120px; }
+  .closer h2 { font-size: clamp(40px, 6vw, 68px); }
+  footer { border-top: 1px solid var(--line); padding: 34px 0 50px; color: var(--faint); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+  footer a:hover { color: var(--fg); }
+
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity .9s cubic-bezier(.2,.7,.2,1), transform .9s cubic-bezier(.2,.7,.2,1); }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (max-width: 860px) {
+    .feature, .feature.flip { grid-template-columns: 1fr; gap: 34px; }
+    .feature.flip .copy { order: 0; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stats div:nth-child(3) { border-left: 0; }
+    nav .links a:not(.pill) { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .reveal { opacity: 1; transform: none; transition: none; } }
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="brand" href="/"><img src="/media/icon.png" alt="">Muster</a>
+  <div class="links">
+    <a href="#answer">Features</a>
+    <a href="https://github.com/josefchen/muster">GitHub</a>
+    <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
+  </div>
+</div></nav>
+
+<header>
+  <div class="glow"></div>
+  <div class="wrap">
+    <img class="icon" src="/media/icon.png" alt="Muster">
+    <h1>Every agent,<br><span>one glance.</span></h1>
+    <p class="lede">A native Mac switcher for your Claude, Codex and Cursor sessions.</p>
+    <div class="ctas">
+      <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">
+        <svg viewBox="0 0 17 20" fill="currentColor"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
+        Download for Mac
+      </a>
+      <span class="brew" title="Copy" onclick="navigator.clipboard.writeText('brew install --cask josefchen/tap/muster');this.querySelector('em').textContent='Copied'">
+        <span>$</span><b>brew install --cask josefchen/tap/muster</b><em style="font-style:normal">Copy</em>
+      </span>
+    </div>
+    <p class="meta">Free and open source · macOS 14 or later · Apple silicon and Intel</p>
+    <div class="stage reveal">
+      <video autoplay muted loop playsinline poster="/media/switcher-dark.jpg">
+        <source src="/media/hero.webm" type="video/webm">
+        <source src="/media/hero.mp4" type="video/mp4">
+      </video>
+    </div>
+  </div>
+</header>
+
+<section id="answer"><div class="wrap feature reveal">
+  <div class="copy">
+    <div class="kicker" style="color:var(--claude)">Answer from anywhere</div>
+    <h2>Say yes without switching.</h2>
+    <p>When an agent asks to run a command or picks your brain, answer with <kbd>⌥</kbd><kbd>↩</kbd> or straight from the notification.</p>
+  </div>
+  <div class="shot"><img src="/media/switcher-dark.jpg" alt="A pending command waiting for approval in Muster" loading="lazy"></div>
+</div></section>
+
+<section><div class="wrap feature flip reveal">
+  <div class="copy">
+    <div class="kicker" style="color:var(--cursor)">⌥Tab</div>
+    <h2>Every agent, one keystroke away.</h2>
+    <p>Most urgent first. Let go to land in the right window, even the terminal it runs in.</p>
+    <div class="agents">
+      <span><i style="background:var(--claude)"></i>Claude</span>
+      <span><i style="background:var(--codex)"></i>Codex</span>
+      <span><i style="background:var(--cursor)"></i>Cursor</span>
+    </div>
+  </div>
+  <div class="shot"><img src="/media/switcher-light.jpg" alt="The switcher in light mode" loading="lazy"></div>
+</div></section>
+
+<section><div class="wrap feature reveal">
+  <div class="copy">
+    <div class="kicker" style="color:var(--codex)">Search and spend</div>
+    <h2>Find anything. See what it costs.</h2>
+    <p><kbd>⌃</kbd><kbd>⌥</kbd><kbd>Space</kbd> finds any session. Every one shows its tokens and what they'd cost at API prices.</p>
+  </div>
+  <div class="shot">
+    <video autoplay muted loop playsinline poster="/media/deck-dark.jpg" loading="lazy">
+      <source src="/media/search.webm" type="video/webm">
+      <source src="/media/search.mp4" type="video/mp4">
+    </video>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <div class="stats reveal">
+    <div><b>1.5 MB</b><span>the whole app</span></div>
+    <div><b>~25 MB</b><span>memory in use</span></div>
+    <div><b>0</b><span>network requests</span></div>
+    <div><b>MIT</b><span>open source</span></div>
+  </div>
+</div></section>
+
+<div class="closer"><div class="wrap reveal">
+  <h2>Run more agents.<br>Miss nothing.</h2>
+  <div class="ctas">
+    <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download for Mac</a>
+    <a class="brew" href="https://github.com/josefchen/muster"><b>Star on GitHub</b></a>
+  </div>
+</div></div>
+
+<footer><div class="wrap">
+  <span>Muster is independent and not affiliated with Anthropic, OpenAI or Anysphere.</span>
+  <span><a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
+</div></footer>
+
+<script>
+  const io = new IntersectionObserver(es => es.forEach(e => e.isIntersecting && (e.target.classList.add('in'), io.unobserve(e.target))), { threshold: .15 });
+  document.querySelectorAll('.reveal').forEach(el => io.observe(el));
+</script>
+</body>
+</html>
