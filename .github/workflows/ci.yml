@@ -3,13 +3,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 jobs:
   build:
-    # macOS runners are free for public repositories; skip while the repo is private.
-    if: ${{ !github.event.repository.private }}
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Test
         run: ./test.sh
       - name: Build
