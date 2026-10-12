@@ -196,6 +196,22 @@ struct Hooks {
 
     var base: String { "http://127.0.0.1:\(port)" }
 
+    // How long the hooks wait for Muster.
+    //
+    // Claude shows its own dialog while its hook waits and takes the first
+    // answer, so a long wait costs nothing there.
+    //
+    // Codex shows its prompt only once the hook returns. If Muster hung (a
+    // crash closes the connection, and curl returns at once), Codex would show
+    // nothing until curl gave up, so curl gives up after 10 minutes. Muster
+    // lets go of a Codex prompt at 9, checked every 30 s, so it never offers an
+    // answer curl is no longer waiting for, and Codex's prompt then appears as
+    // usual. Codex's own timeout only backs curl up.
+    static let claudeWait = 3600
+    static let codexWait = 600
+    static let codexHold: TimeInterval = 9 * 60
+    static let holdSweep: TimeInterval = 30
+
     /// This install's hooks are there and call this port.
     var isInstalled: Bool { mine.contains(where: calls) }
 
@@ -206,13 +222,13 @@ struct Hooks {
     private func handler(for event: String) -> [String: Any]? {
         switch (agent, event) {
         case (.claude, "PermissionRequest"):
-            return ["type": "http", "url": base + "/claude/permission", "timeout": 3600, "headers": ["X-Muster-Token": token]]
+            return ["type": "http", "url": base + "/claude/permission", "timeout": Self.claudeWait, "headers": ["X-Muster-Token": token]]
         case (.claude, "PreToolUse"):
-            return ["type": "http", "url": base + "/claude/question", "timeout": 3600, "headers": ["X-Muster-Token": token]]
+            return ["type": "http", "url": base + "/claude/question", "timeout": Self.claudeWait, "headers": ["X-Muster-Token": token]]
         case (.codex, "PermissionRequest"):
-            let command = "/usr/bin/curl -s --max-time 3600 -X POST -H 'Content-Type: application/json' " +
+            let command = "/usr/bin/curl -s --max-time \(Self.codexWait) -X POST -H 'Content-Type: application/json' " +
                 "-H 'X-Muster-Token: \(token)' --data-binary @- \(base)/codex/permission || true"
-            return ["type": "command", "command": command, "timeout": 3600]
+            return ["type": "command", "command": command, "timeout": Self.codexWait + 30]
         default:
             return nil
         }

@@ -61,7 +61,8 @@ final class Prompts {
         let saved = UserDefaults.standard.integer(forKey: "hookPort")
         return ports.contains(UInt16(clamping: saved)) ? UInt16(clamping: saved) : ports.lowerBound
     }()
-    static let maxHold: TimeInterval = 15 * 60
+    /// Claude's dialog is live alongside; Codex's waits for us (see Hooks.codexWait).
+    static func maxHold(_ agent: Agent) -> TimeInterval { agent == .codex ? Hooks.codexHold : 15 * 60 }
 
     private(set) var pending: [UUID: Prompt] = [:]
     private var replies: [UUID: (Data) -> Void] = [:]
@@ -94,7 +95,8 @@ final class Prompts {
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
             self?.releaseIfWatched()
         }
-        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.expire() }
+        // Common modes, so an open menu doesn't hold a Codex prompt past curl's limit.
+        RunLoop.main.add(Timer(timeInterval: Hooks.holdSweep, repeats: true) { [weak self] _ in self?.expire() }, forMode: .common)
     }
 
     /// Keeps the port the server got, and points this install's hooks at it.
@@ -179,7 +181,7 @@ final class Prompts {
     }
 
     private func expire() {
-        for p in pending.values where Date().timeIntervalSince(p.created) > Self.maxHold { release(p.id) }
+        for p in pending.values where Date().timeIntervalSince(p.created) > Self.maxHold(p.agent) { release(p.id) }
         Store.shared.refreshPrompts()
     }
 

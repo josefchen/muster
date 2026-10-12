@@ -461,6 +461,20 @@ for (name, content) in [("invalid JSON", #"{"model": "opus""#), ("JSON with comm
     check(message?.contains("left it alone") == true && text(broken) == content && !fm.fileExists(atPath: broken + ".muster-backup"),
           "\(name) is left untouched, with a reason")
 }
+let timed = root + "/edits/times/hooks.json"
+try! Hooks(agent: .codex, path: timed, port: 47621, token: tokenA).install()
+let codexHandler = (groups(timed, "PermissionRequest").first?["hooks"] as? [[String: Any]])?.first ?? [:]
+let curlWait = (codexHandler["command"] as? String).flatMap { c in
+    c.range(of: "--max-time ").flatMap { Int(c[$0.upperBound...].prefix { $0.isNumber }) }
+} ?? .max
+check(curlWait <= 600, "if Muster hangs, Codex waits at most 10 minutes for its own prompt")
+check((codexHandler["timeout"] as? Int ?? 0) >= curlWait, "Codex's own hook timeout doesn't cut curl short")
+check(Hooks.codexHold + Hooks.holdSweep < Double(curlWait), "Muster lets go of a Codex prompt before curl gives up on it")
+let timedClaude = root + "/edits/times/settings.json"
+try! claudeHooks(timedClaude).install()
+check((groups(timedClaude, "PermissionRequest").first?["hooks"] as? [[String: Any]])?.first?["timeout"] as? Int == 3600,
+      "Claude's hook still waits an hour, beside its own dialog")
+
 let strays = (fm.enumerator(atPath: root + "/edits")?.allObjects as? [String] ?? []).filter {
     let name = ($0 as NSString).lastPathComponent
     return name.hasPrefix(".") && name.contains(".muster-")
