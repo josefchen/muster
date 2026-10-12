@@ -106,6 +106,73 @@ let cursor = Dictionary(uniqueKeysWithValues: CursorReader(home: root).scan(now:
 check(cursor["c1"]?.status == .needsYou && cursor["c1"]?.project == "/work/web", "a blocking pending action reads as needs you")
 check(cursor["c2"]?.status == .done && cursor["c2"]?.title == "Add dark mode", "a turn_ended transcript reads as done, titled by its first query")
 
+print("Usage history")
+let midnight = Calendar.current.startOfDay(for: now)
+let isoFrac: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+func message(_ id: String, _ at: Date, _ usage: [String: Any], model: String = "claude-opus-5-5", sidechain: Bool = false) -> String {
+    json(["type": "assistant", "timestamp": isoFrac.string(from: at), "cwd": "/work/atlas", "isSidechain": sidechain,
+          "message": ["id": id, "model": model, "usage": usage, "content": [["type": "tool_use", "name": "Bash",
+                      "input": ["cwd": "/elsewhere", "timestamp": "2020-01-01T00:00:00Z"]]]]])
+}
+let small: [String: Any] = ["input_tokens": 5, "output_tokens": 5]
+let h1 = message("msg_H1", midnight.addingTimeInterval(-30), u1)
+write("/history/.claude/projects/-work-atlas/a.jsonl", [h1, h1, message("msg_H2", midnight.addingTimeInterval(30), u2)].joined(separator: "\n") + "\n")
+write("/history/.claude/projects/-work-atlas/b.jsonl", h1 + "\n")
+write("/history/.claude/projects/-work-atlas/a/subagents/agent-1.jsonl",
+      message("msg_H3", midnight.addingTimeInterval(60), small, model: "claude-sonnet-5", sidechain: true) + "\n")
+write("/history/.claude/projects/-work-old/old.jsonl", message("msg_H9", now.addingTimeInterval(-3600), small) + "\n")
+try! fm.setAttributes([.modificationDate: now.addingTimeInterval(-31 * 86_400)], ofItemAtPath: root + "/history/.claude/projects/-work-old/old.jsonl")
+let rollout2 = "/history/.codex/sessions/rollout-y.jsonl"
+func tokenCount(_ at: Date, _ input: Int, _ cached: Int, _ write: Int, _ output: Int) -> String {
+    json(["timestamp": isoFrac.string(from: at), "type": "event_msg", "payload": ["type": "token_count", "info": ["total_token_usage": [
+        "input_tokens": input, "cached_input_tokens": cached, "cache_write_input_tokens": write, "output_tokens": output]]]])
+}
+write(rollout2, [
+    json(["timestamp": isoFrac.string(from: midnight.addingTimeInterval(-7200)), "type": "turn_context", "payload": ["model": "gpt-6-astra"]]),
+    tokenCount(midnight.addingTimeInterval(-3600), 10_000, 8_000, 1_000, 500),
+    tokenCount(midnight.addingTimeInterval(3600), 16_000, 12_000, 1_000, 900),
+].joined(separator: "\n") + "\n")
+sqlite("/history/.codex/state_5.sqlite", [
+    "CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, archived INT, updated_at_ms INT)",
+    "INSERT INTO threads VALUES ('t2', '\(root + rollout2)', '/work/lexer', 0, \(Int64(now.timeIntervalSince1970 * 1000)))",
+])
+let cachePath = root + "/history/usage-cache.bin"
+let history = History(home: root + "/history", configDir: nil, codexHome: nil, cachePath: cachePath)
+let first = history.scan(now: now)!
+let yesterday = first.days[History.days - 2], today = first.days[History.days - 1]
+check(first.days.count == 30 && today.start == midnight, "thirty local days, ending today")
+check(yesterday.tokens[.claude] == 1360 && today.tokens[.claude] == 2021 + 10,
+      "Claude messages count on their local day either side of midnight, subagents included")
+check(first.models.first { $0.name == "claude-opus-5-5" }?.tokens == 1360 + 2021,
+      "a message repeated in its file and copied into a resumed session counts once")
+let h1Writes: Double = 100 * 5.0 + 200 * 8.0
+let h1Rest: Double = 10 * 4.0 + 50 * 20.0 + 1000 * 0.2
+let h1Cost: Double = (h1Writes + h1Rest) / 1_000_000
+check(abs((yesterday.cost[.claude] ?? 0) - h1Cost) < 1e-12, "1-hour cache writes are priced apart from 5-minute ones")
+check(first.projects.first { $0.id == "/work/atlas" }?.name == "atlas", "projects come from the top-level cwd, not tool input")
+check(yesterday.tokens[.codex] == 10_500 && today.tokens[.codex] == 6_400, "each Codex token_count adds its change to its own day")
+let deltaCost: Double = (2_000 * 10.0 + 4_000 * 1.0 + 400 * 50.0) / 1_000_000
+check(abs((today.cost[.codex] ?? 0) - deltaCost) < 1e-12 && first.models.contains { $0.name == "gpt-6-astra" && $0.agent == .codex }, "Codex deltas are priced under the turn's model")
+check(history.stats.files == 4 && first.tokens == 1360 + 2031 + 16_900, "files untouched for over 30 days are skipped")
+check(history.stats.parsed == 4 && history.stats.cached == 0, "a first scan reads every file")
+let second = history.scan(now: now)!
+check(history.stats.cached == 4 && history.stats.bytesRead == 0 && second.tokens == first.tokens,
+      "a second scan reads nothing from unchanged files")
+let appended = message("msg_H4", midnight.addingTimeInterval(90), small) + "\n"
+let handle = FileHandle(forWritingAtPath: root + "/history/.claude/projects/-work-atlas/a.jsonl")!
+handle.seekToEndOfFile()
+handle.write(appended.data(using: .utf8)!)
+try! handle.close()
+let third = history.scan(now: now)!
+check(history.stats.appended == 1 && history.stats.bytesRead == UInt64(appended.utf8.count)
+      && third.days[History.days - 1].tokens[.claude] == 2031 + 10, "a grown transcript is read from where the last scan stopped")
+check(UsageHistory.sample(now: now).tokens == UsageHistory.sample(now: now).tokens && UsageHistory.sample(now: now).tokens > 0,
+      "demo history is the same every time")
+
 print("Pricing")
 check(Pricing.price(for: "claude-haiku-4-5-20251001") != nil, "dated model ids resolve by prefix")
 check(Pricing.price(for: "some-new-model") == nil, "unknown models are not priced")
