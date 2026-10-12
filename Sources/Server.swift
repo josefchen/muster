@@ -108,12 +108,26 @@ final class HookServer {
             case .complete(let request):
                 self.arrived(c)
                 self.onRequest?(request, Exchange(connection: c))
+                if done || error != nil { c.cancel() } else { self.watch(c) }
             case .partial where !done && error == nil:
                 self.read(c, buffer)
             default:
                 self.arrived(c)
                 c.cancel()
             }
+        }
+    }
+
+    /// Keeps a read open on a request that's waiting for its answer: it's the
+    /// only way to hear the client hang up, which Claude does once you answer in
+    /// its own dialog. Closing the connection then fires `onClose`. Bytes sent
+    /// after the request are dropped unread; a client that keeps sending more
+    /// than a request could hold isn't a hook, and is closed.
+    private func watch(_ c: NWConnection, extra: Int = 0) {
+        c.receive(minimumIncompleteLength: 1, maximumLength: 64 << 10) { [weak self] data, _, done, error in
+            let extra = extra + (data?.count ?? 0)
+            guard let self, !done, error == nil, extra <= HTTPRequest.maxHead + HTTPRequest.maxBody else { c.cancel(); return }
+            self.watch(c, extra: extra)
         }
     }
 }

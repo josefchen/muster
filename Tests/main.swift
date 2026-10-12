@@ -270,11 +270,23 @@ print("Hook server")
 let serverQueue = DispatchQueue(label: "muster-tests.server")
 let server = HookServer(ports: 47_700...47_719, queue: serverQueue)
 var held: [HookServer.Exchange] = []
+var heldClosed = 0
 var serverPort: UInt16 = 0
 let listening = DispatchSemaphore(value: 0)
 server.onReady = { serverPort = $0; listening.signal() }
 server.onRequest = { r, x in
-    if r.path == "/hold" { held.append(x) } else { x.reply(Data(#"{"ok":true}"#.utf8)) }
+    guard r.path == "/hold" else { x.reply(Data(#"{"ok":true}"#.utf8)); return }
+    held.append(x)
+    x.onClose { heldClosed += 1 }
+}
+/// Polls the server's state until `cond` holds, for up to `wait` seconds.
+func soon(_ wait: Double, _ cond: () -> Bool) -> Bool {
+    let end = Date().addingTimeInterval(wait)
+    while Date() < end {
+        if serverQueue.sync(execute: cond) { return true }
+        Thread.sleep(forTimeInterval: 0.02)
+    }
+    return false
 }
 serverQueue.sync { server.deadline = 0.5; server.maxIncoming = 3; server.start(on: 47_700) }
 check(listening.wait(timeout: .now() + 5) == .success, "the server listens on 127.0.0.1")
@@ -344,6 +356,33 @@ check(closed(holder, wait: 1.5) == nil, "a request held for an answer outlives t
 serverQueue.sync { held.first?.reply(Data(#"{"answer":1}"#.utf8)) }
 check(closed(holder, wait: 3)?.hasSuffix(#"{"answer":1}"#) == true, "and gets its answer when it comes")
 close(holder)
+
+let holdRequest = "POST /hold HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}"
+var (holds, closes) = serverQueue.sync { (held.count, heldClosed) }
+let quitter = dial()
+send(quitter, holdRequest)
+check(soon(2) { held.count == holds + 1 }, "another request is held")
+close(quitter)
+check(soon(1) { heldClosed == closes + 1 }, "and withdrawn within a second of the client hanging up")
+
+(holds, closes) = serverQueue.sync { (held.count, heldClosed) }
+let chatty = dial()
+send(chatty, holdRequest + "POST /x HTTP/1.1\r\nContent-Length: -5\r\n\r\nnoise")
+check(soon(2) { held.count == holds + 1 } && closed(chatty, wait: 0.7) == nil && serverQueue.sync { heldClosed } == closes,
+      "bytes after a held request are ignored, past the deadline too")
+serverQueue.sync { held.last?.reply(Data(#"{"answer":2}"#.utf8)) }
+check(closed(chatty, wait: 3)?.hasSuffix(#"{"answer":2}"#) == true, "and the answer still arrives")
+close(chatty)
+
+(holds, closes) = serverQueue.sync { (held.count, heldClosed) }
+let flood = dial()
+send(flood, holdRequest)
+check(soon(2) { held.count == holds + 1 }, "a held client that keeps sending…")
+var sendWait = timeval(tv_sec: 5, tv_usec: 0)   // a server that stops reading would block this send for good
+setsockopt(flood, SOL_SOCKET, SO_SNDTIMEO, &sendWait, socklen_t(MemoryLayout<timeval>.size))
+send(flood, String(repeating: "x", count: HTTPRequest.maxHead + HTTPRequest.maxBody + 1))
+check(soon(3) { heldClosed == closes + 1 }, "…is cut off once it has sent more than a request could hold")
+close(flood)
 
 let hostile = dial()
 send(hostile, "POST / HTTP/1.1\r\nContent-Length: -5\r\n\r\n")
