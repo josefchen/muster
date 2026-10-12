@@ -9,7 +9,13 @@ import SQLite3
 // names them, transcripts are read only from where the last scan stopped, and the
 // apps' databases stay open between queries.
 
-let home = ProcessInfo.processInfo.environment["MUSTER_HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path   // e2e fixture
+/// Your home folder. End-to-end runs (MUSTER_E2E=1) read a fixture folder from
+/// MUSTER_HOME instead; E2E.swift refuses to start if that could be the real one.
+let home: String = {
+    let env = ProcessInfo.processInfo.environment
+    if env["MUSTER_E2E"] == "1", let fixture = env["MUSTER_HOME"] { return fixture }
+    return FileManager.default.homeDirectoryForCurrentUser.path
+}()
 let recentWindow: TimeInterval = 3 * 3600   // files untouched for longer are not read
 
 // MARK: - Changes
