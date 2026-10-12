@@ -58,7 +58,7 @@ Tokens and API-rate cost for every session, priced per model and per message.
   </picture>
 </p>
 
-<p align="center"><sub>Native AppKit and Liquid Glass · 2 MB · about 25 MB of memory · no accounts, no analytics · MIT</sub></p>
+<p align="center"><sub>Native AppKit and Liquid Glass · 2 MB download · about 25 MB of memory · no accounts, no analytics · MIT</sub></p>
 
 <br>
 
