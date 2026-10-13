@@ -12,9 +12,10 @@ enum Settings {
         get { !d.bool(forKey: "mute.needsYou") }
         set { d.set(!newValue, forKey: "mute.needsYou") }
     }
+    /// Off unless chosen: Claude's and Codex's own apps already say when they finish.
     static var notifyDone: Bool {
-        get { !d.bool(forKey: "mute.done") }
-        set { d.set(!newValue, forKey: "mute.done") }
+        get { d.bool(forKey: "notify.done") }
+        set { d.set(newValue, forKey: "notify.done") }
     }
     enum CostDisplay: String, CaseIterable { case costAndTokens, tokens, hidden }
 
@@ -224,7 +225,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         for s in sessions where s.promptID == nil {
             let prev = last[s.id]
             if prev?.0 == s.status && prev?.1 == s.since { continue }
-            if (s.status == .needsYou || s.status == .error) && Settings.notifyNeedsYou && prev?.0 != s.status {
+            // While the alert is on it already shows who's waiting; a banner too only doubles it.
+            if (s.status == .error || (s.status == .needsYou && !Attention.enabled)) && Settings.notifyNeedsYou && prev?.0 != s.status {
                 post(s, s.status == .error ? "hit an error" : "needs you")
             } else if s.status == .done && Settings.notifyDone && (prev?.0 == .working || prev?.0 == .needsYou) {
                 post(s, "finished")
@@ -256,7 +258,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let gone = shownPrompts.subtracting(current)
         if !gone.isEmpty { UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: gone.map(\.uuidString)) }
         for id in current.subtracting(shownPrompts) {
-            guard let p = Prompts.shared.pending[id], Settings.notifyNeedsYou else { continue }
+            guard let p = Prompts.shared.pending[id], Settings.notifyNeedsYou, !Attention.enabled else { continue }
             let c = UNMutableNotificationContent()
             c.title = "\(p.agent.name) · \(p.headline)"
             c.body = p.detail
