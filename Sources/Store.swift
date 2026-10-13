@@ -50,7 +50,8 @@ final class Store {
     func start() {
         if Self.demo {
             sources = [.claude: .ok(3), .codex: .ok(2), .cursor: .ok(2)]
-            if !Demo.autoplay { Prompts.shared.addDemoPrompt() }
+            if CommandLine.arguments.contains("--question") { Prompts.shared.addDemoQuestion() }
+            else if !Demo.autoplay { Prompts.shared.addDemoPrompt() }
             publish(Session.samples)
             return
         }

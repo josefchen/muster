@@ -5,8 +5,8 @@ import AppKit
 /// panels so only it shows through the glass.
 enum Demo {
     /// `--autoplay` (with `--attention`): the scene scripts/record-answer.sh records. Claude
-    /// asks, then Codex, and ⌥↩ answers each, with the keys drawn under the alert. Muster
-    /// plays it itself, so recording needs no synthetic keystrokes.
+    /// asks, then Codex; ⌥↓ unfolds why Codex asks, and ⌥↩ answers each, with the keys drawn
+    /// under the alert. Muster plays it itself, so recording needs no synthetic keystrokes.
     static let autoplay = Store.demo && CommandLine.arguments.contains("--autoplay")
     private static var caps: KeyCaps?
 
@@ -18,16 +18,19 @@ enum Demo {
             }
         }
         guard autoplay else { return }
-        let keys = KeyCaps(["⌥", "↩"])
+        let keys = KeyCaps(["⌥", "↓"])
         caps = keys
         let ask = { (agent: Agent) in Prompts.shared.addDemoPrompt(agent); Store.shared.refreshPrompts() }
+        let peek = { NotificationCenter.default.post(name: Attention.peekRequest, object: NSNumber(value: true)) }
         let steps: [(TimeInterval, () -> Void)] = [
             (3.0, { ask(.claude) }),
             (4.1, { ask(.codex) }),
             (5.0, { keys.show() }),
-            (5.9, { keys.press(); answer(.allow) }),
-            (7.5, { keys.press(); answer(.allow) }),
-            (8.6, { keys.hide() }),
+            (5.7, { keys.press(); peek() }),
+            (7.5, { keys.label(1, "↩") }),
+            (7.9, { keys.press(); answer(.allow) }),
+            (9.4, { keys.press(); answer(.allow) }),
+            (10.4, { keys.hide() }),
         ]
         for (t, step) in steps { DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: step) }
     }
@@ -75,6 +78,7 @@ enum Demo {
 private final class KeyCaps {
     private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
     private var keys: [CALayer] = []
+    private var texts: [CATextLayer] = []
     private static let side: CGFloat = 60, gap: CGFloat = 10
 
     init(_ labels: [String]) {
@@ -112,18 +116,27 @@ private final class KeyCaps {
             cap.addSublayer(text)
             root.layer?.addSublayer(cap)
             keys.append(cap)
+            texts.append(text)
         }
         panel.contentView = root
     }
 
-    /// Centred under where the alert sits on the main screen.
+    /// Centred under where the alert sits on the main screen, clear of it even unfolded.
     func show() {
         guard let area = NSScreen.screens.first?.visibleFrame else { return }
         let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.maxY - 8 - 86 - 28 - size.height))
+        panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.maxY - 8 - 170 - 24 - size.height))
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { $0.duration = 0.3; panel.animator().alphaValue = 1 }
+    }
+
+    func label(_ i: Int, _ text: String) {
+        guard texts.indices.contains(i) else { return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.15)
+        texts[i].string = text
+        CATransaction.commit()
     }
 
     /// Down, held long enough to read in a 20 fps GIF, then up.

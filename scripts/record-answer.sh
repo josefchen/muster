@@ -1,5 +1,6 @@
 #!/bin/sh
-# Record the alert scene in demo mode: Claude asks, then Codex, and ⌥↩ answers each.
+# Record the alert scene in demo mode: Claude asks, then Codex; ⌥↓ unfolds why Codex
+# asks, and ⌥↩ answers each.
 # Muster plays it itself (--autoplay), so this needs Screen Recording but not
 # Accessibility. Writes answer-<theme>.mp4, .webm and .gif (README) to the out folder.
 #
@@ -22,13 +23,13 @@ quit
 if [ "$THEME" = light ]; then open -n "$APP" --args --demo --backdrop --attention --autoplay --light
 else open -n "$APP" --args --demo --backdrop --attention --autoplay; fi
 sleep 1.6
-screencapture -v -V 11 -x "$RAW" >/dev/null 2>&1
+screencapture -v -V 13 -x "$RAW" >/dev/null 2>&1
 quit
 open "$APP"
 
-# 720 × 270 points around the alert (top) and the keys under it.
-CROP="$((720 * SCALE)):$((270 * SCALE)):$(((W / 2 - 360) * SCALE)):$(((BAR - 26) * SCALE))"
-ffmpeg -v error -y -ss 0.4 -t 8.4 -i "$RAW" -vf "crop=$CROP,fps=30,scale=1440:-2:flags=lanczos" \
+# 720 × 340 points around the alert (top, unfolded at most) and the keys under it.
+CROP="$((720 * SCALE)):$((340 * SCALE)):$(((W / 2 - 360) * SCALE)):$(((BAR - 26) * SCALE))"
+ffmpeg -v error -y -ss 0.4 -t 10.6 -i "$RAW" -vf "crop=$CROP,fps=30,scale=1440:-2:flags=lanczos" \
   -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart -an "$OUT/answer-$THEME.mp4"
 ffmpeg -v error -y -i "$OUT/answer-$THEME.mp4" -c:v libvpx-vp9 -b:v 0 -crf 32 -an "$OUT/answer-$THEME.webm"
 # The GIF opens on both agents waiting (2.5 s into the clip), plays to the end, then wraps

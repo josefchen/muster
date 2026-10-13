@@ -100,6 +100,17 @@ final class Prompts {
         pending[p.id] = p
     }
 
+    /// A sample multiple-choice question, for `--demo --question` screenshots of the details.
+    func addDemoQuestion() {
+        let options = [("Postgres", "Beside the users table, kept across restarts"),
+                       ("Redis", "Expires on its own, one more service to run"),
+                       ("In memory", "Simplest, but lost on every deploy")]
+        let p = Prompt(agent: .claude, sessionID: "Migrate auth to passkeys", project: "/work/atlas",
+                       kind: .question(text: "Where should passkey challenges live?", options: options.map(\.0)), blocksNative: true,
+                       context: Prompt.Context(choices: options.map { (label: $0.0, note: $0.1) }))
+        pending[p.id] = p
+    }
+
     func prompt(for s: Session) -> Prompt? {
         pending.values.filter { $0.agent == s.agent && $0.sessionID == s.sid }.max { $0.created < $1.created }
     }
