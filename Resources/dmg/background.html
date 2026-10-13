@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- The disk image window's background, 660 × 400 points, rendered by scripts/dmg.sh at
+     1× and 2×. Finder draws the icons at (170, 208) and (490, 208) and writes their names
+     under them in black or white depending on the Mac's appearance, so the band behind the
+     names stays mid-tone: both colours read at about 4.5:1 there. The footer stays clear of
+     the bottom 28 points, where Finder's path bar sits for people who keep it on. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 660px; height: 400px; overflow: hidden; }
+  body { position: relative; color: #fff; -webkit-font-smoothing: antialiased;
+         font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+         background: linear-gradient(135deg, #5f4bd6 0%, #8a55c8 46%, #c0653f 100%); }
+  body::before { content: ""; position: absolute; inset: 0;
+                 background: radial-gradient(60% 70% at 15% 10%, rgba(255,255,255,.16), transparent 70%),
+                             radial-gradient(50% 60% at 95% 100%, rgba(255,170,90,.22), transparent 70%); }
+  h1 { position: absolute; top: 40px; width: 100%; text-align: center; font-size: 22px; font-weight: 650; letter-spacing: -.015em; }
+  p.sub { position: absolute; top: 72px; width: 100%; text-align: center; font-size: 13px; color: rgba(255,255,255,.78); }
+  .glow { position: absolute; width: 190px; height: 190px; margin: -95px 0 0 -95px; border-radius: 50%;
+          background: radial-gradient(closest-side, rgba(255,255,255,.22), rgba(255,255,255,0)); }
+  svg { position: absolute; left: 0; top: 0; }
+  p.foot { position: absolute; bottom: 44px; width: 100%; text-align: center; font-size: 11px; color: rgba(255,255,255,.62); letter-spacing: .01em; }
+</style>
+</head>
+<body>
+  <h1>Drag Muster into Applications</h1>
+  <p class="sub">Then open it from your Applications folder.</p>
+  <div class="glow" style="left:170px; top:208px"></div>
+  <div class="glow" style="left:490px; top:208px"></div>
+  <svg width="660" height="400" viewBox="0 0 660 400" aria-hidden="true">
+    <path d="M262 210 C 300 186, 356 184, 392 202" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="1 9"/>
+    <path d="M381 190 L 398 205 L 377 211" fill="none" stroke="rgba(255,255,255,.9)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <p class="foot">Free and open source · agentmuster.app</p>
+</body>
+</html>

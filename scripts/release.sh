@@ -66,10 +66,8 @@ rm "$OUT/notarize.zip"
 xcrun stapler staple "$APP"
 ditto -c -k --keepParent "$APP" "$OUT/Muster.zip"
 
-STAGE="$OUT/dmg"
-mkdir -p "$STAGE" && cp -R "$APP" "$STAGE/" && ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "Muster" -srcfolder "$STAGE" -fs HFS+ -format UDZO -ov "$OUT/Muster.dmg" >/dev/null
-rm -rf "$STAGE"
+# The window that shows where to drag Muster: see scripts/dmg.sh.
+"$HERE/scripts/dmg.sh" "$APP" "$OUT/Muster.dmg"
 codesign --force --timestamp --sign "$IDENTITY" "$OUT/Muster.dmg"
 notarize "$OUT/Muster.dmg"
 xcrun stapler staple "$OUT/Muster.dmg"
