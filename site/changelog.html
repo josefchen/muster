@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changelog · Muster</title>
+<meta name="description" content="Everything new in Muster, the Mac menu bar app for your Claude, Codex and Cursor sessions, newest first.">
+<link rel="canonical" href="https://agentmuster.app/changelog">
+<link rel="alternate" type="application/atom+xml" title="Muster changelog" href="/changelog.xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Muster">
+<meta property="og:url" content="https://agentmuster.app/changelog">
+<meta property="og:title" content="Muster changelog">
+<meta property="og:description" content="Everything new in Muster, newest first.">
+<meta property="og:image" content="https://agentmuster.app/media/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://agentmuster.app/media/social-preview.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080b" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/media/icon.png">
+<link rel="apple-touch-icon" href="/media/icon.png">
+<style>
+  :root {
+    --bg: #fbfbfd; --fg: #1d1d1f; --dim: #6e6e73; --faint: #8e8e93; --line: rgba(0,0,0,.08); --wire: rgba(0,0,0,.16);
+    --nav: rgba(251,251,253,.72); --pill: rgba(0,0,0,.06); --pill-hover: rgba(0,0,0,.1);
+    --glass: rgba(255,255,255,.72);
+    --claude: #e07a1f; --codex: #3274f0; --cursor: #8a4ff0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #5c5c64; --line: rgba(255,255,255,.08); --wire: rgba(255,255,255,.16);
+      --nav: rgba(8,8,11,.72); --pill: rgba(255,255,255,.1); --pill-hover: rgba(255,255,255,.16);
+      --glass: rgba(255,255,255,.05);
+      --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: var(--bg); color: var(--fg); -webkit-font-smoothing: antialiased; scroll-padding-top: 76px; }
+  body { background: var(--bg); font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2 { text-wrap: balance; }
+  p, li { text-wrap: pretty; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding-inline: 24px; }
+  .narrow { max-width: 880px; }
+
+  nav { position: fixed; inset: 0 0 auto; z-index: 10; background: var(--nav); border-bottom: 1px solid var(--line);
+        backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 52px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: -.01em; }
+  .brand img { width: 24px; height: 24px; }
+  nav .links { display: flex; gap: 22px; align-items: center; font-size: 14px; color: var(--dim); }
+  nav .links a:hover, nav .links a[aria-current] { color: var(--fg); }
+  .pill { color: var(--fg) !important; background: var(--pill); padding: 6px 14px; border-radius: 999px; }
+  .pill:hover { background: var(--pill-hover); }
+
+  .top { padding: 132px 0 40px; }
+  h1 { font-size: clamp(44px, 7vw, 72px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
+  .lede { margin-top: 14px; font-size: 20px; line-height: 1.45; color: var(--dim); letter-spacing: -.01em; }
+  .follow { margin-top: 18px; display: flex; gap: 18px; flex-wrap: wrap; font-size: 14px; color: var(--dim); }
+  .follow a { display: inline-flex; align-items: center; gap: 7px; }
+  .follow a:hover { color: var(--fg); }
+  .follow svg { width: 14px; height: 14px; }
+
+  .release { display: grid; grid-template-columns: 190px 1fr; gap: 32px; padding: 52px 0 56px; border-top: 1px solid var(--line); }
+  .when { position: sticky; top: 84px; align-self: start; display: grid; justify-items: start; gap: 4px; }
+  .ver { font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -.035em; }
+  .ver:hover { color: var(--dim); }
+  .latest { display: inline-block; margin: 2px 0 4px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+            color: var(--fg); background: var(--pill); }
+  .when time { font-size: 14px; color: var(--faint); }
+  .what h2 { font-size: 26px; line-height: 1.25; letter-spacing: -.025em; font-weight: 650; max-width: 620px; }
+  .what ul { list-style: none; margin-top: 22px; display: grid; gap: 14px; }
+  .what li { position: relative; padding-left: 20px; color: var(--dim); font-size: 16.5px; line-height: 1.55; }
+  .what li::before { content: ""; position: absolute; left: 1px; top: .62em; width: 7px; height: 7px; border-radius: 50%;
+                     background: linear-gradient(135deg, var(--claude), var(--cursor) 55%, var(--codex)); }
+  .what li b { color: var(--fg); font-weight: 600; }
+  .what .note { margin-top: 24px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass);
+                color: var(--dim); font-size: 15px; line-height: 1.5; }
+  .what .note b { color: var(--fg); font-weight: 600; }
+  code { font: 14px/1 ui-monospace, "SF Mono", Menlo, monospace; padding: 2px 5px; border-radius: 5px; background: var(--pill); color: var(--fg); }
+
+  footer { margin-top: 24px; border-top: 1px solid var(--line); padding: 30px 0 46px; color: var(--faint); font-size: 13px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  footer a:hover { color: var(--fg); }
+
+  @media (max-width: 720px) {
+    .top { padding-top: 108px; }
+    .release { grid-template-columns: 1fr; gap: 14px; padding: 40px 0 44px; }
+    .when { position: static; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; }
+    .ver { font-size: 26px; }
+    .latest { margin: 0; align-self: center; }
+    .what h2 { font-size: 22px; }
+  }
+  @media (max-width: 560px) {
+    .wrap { padding-inline: 16px; }
+    nav .links { gap: 16px; }
+    .lede { font-size: 18px; }
+    .what li { font-size: 16px; }
+  }
+  @media (max-width: 400px) {
+    nav .gh { display: none; }
+  }
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="brand" href="/"><img src="/media/icon.png" alt="">Muster</a>
+  <div class="links">
+    <a href="/changelog" aria-current="page">Changelog</a>
+    <a class="gh" href="https://github.com/josefchen/muster">GitHub</a>
+    <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
+  </div>
+</div></nav>
+
+<main class="wrap narrow">
+  <div class="top">
+    <h1>Changelog</h1>
+    <p class="lede">Everything new in Muster, newest first.</p>
+    <p class="follow">
+      <a href="/changelog.xml"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3" cy="13" r="2"/><path d="M1 6.5a8.5 8.5 0 0 1 8.5 8.5h-2.2A6.3 6.3 0 0 0 1 8.7z"/><path d="M1 1.5A13.5 13.5 0 0 1 14.5 15h-2.2A11.3 11.3 0 0 0 1 3.7z"/></svg>Follow with RSS</a>
+      <a href="https://github.com/josefchen/muster/releases">Downloads for every version</a>
+    </p>
+  </div>
+<!-- releases -->
+</main>
+
+<footer><div class="wrap">
+  <span>Muster is an independent project, not affiliated with Anthropic, OpenAI or Anysphere.</span>
+  <span><a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
+</div></footer>
+</body>
+</html>

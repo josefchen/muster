@@ -175,6 +175,7 @@
   }
   @media (max-width: 560px) {
     .wrap { padding-inline: 16px; }
+    nav .links { gap: 16px; }
     .lede { font-size: 18px; }
     .brew { font-size: 12px; padding: 14px 12px; gap: 8px; }
     .brew em { display: none; }
@@ -182,6 +183,9 @@
     .details { grid-template-columns: 1fr; }
     .diagram { padding: 40px 16px 28px; }
     .agents { grid-auto-flow: row; }
+  }
+  @media (max-width: 400px) {
+    nav .gh { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .js .reveal { opacity: 1; transform: none; transition: none; }
@@ -193,7 +197,8 @@
 <nav><div class="wrap">
   <a class="brand" href="/"><img src="/media/icon.png" alt="">Muster</a>
   <div class="links">
-    <a href="https://github.com/josefchen/muster">GitHub</a>
+    <a href="/changelog">Changelog</a>
+    <a class="gh" href="https://github.com/josefchen/muster">GitHub</a>
     <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
   </div>
 </div></nav>

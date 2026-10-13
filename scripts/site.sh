@@ -1,8 +1,9 @@
 #!/bin/sh
-# Build the landing page into site/dist and deploy it to Cloudflare.
+# Build the landing page and the changelog into site/dist and deploy them to Cloudflare.
 #
 #   scripts/site.sh            build site/dist
-#   scripts/site.sh preview    build, then serve it on http://127.0.0.1:8790
+#   scripts/site.sh preview    build, then serve it on http://127.0.0.1:8790 (the changelog is at
+#                              /changelog.html there; Cloudflare serves it at /changelog)
 #   scripts/site.sh deploy     build, then deploy agentmuster.app and the www redirect
 #
 # Deploying needs wrangler logged in to the Cloudflare account that holds the
@@ -14,8 +15,11 @@ OUT="$SITE/dist"
 
 rm -rf "$OUT" && mkdir -p "$OUT/media"
 cp "$SITE/index.html" "$SITE/404.html" "$SITE/robots.txt" "$SITE/sitemap.xml" "$SITE/_headers" "$OUT/"
+# The changelog page and its feed, from CHANGELOG.md.
+"$HERE/scripts/changelog.sh" page "$SITE/changelog.html" > "$OUT/changelog.html"
+"$HERE/scripts/changelog.sh" feed > "$OUT/changelog.xml"
 # Only the media the pages use, straight from the README's media folder.
-for f in $(grep -oh '/media/[A-Za-z0-9._-]*' "$SITE/index.html" "$SITE/404.html" | sort -u); do
+for f in $(grep -oh '/media/[A-Za-z0-9._-]*' "$SITE/index.html" "$SITE/404.html" "$SITE/changelog.html" | sort -u); do
   cp "$HERE/docs$f" "$OUT$f"
 done
 
