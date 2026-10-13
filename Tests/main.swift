@@ -816,6 +816,144 @@ check(missingSymbols.isEmpty, "every symbol in CHANGELOG.md exists" + (missingSy
 let building = (NSDictionary(contentsOf: repo.appendingPathComponent("Resources/Info.plist")) as? [String: Any])?["CFBundleShortVersionString"] as? String ?? "?"
 check(shipped.contains { Changelog.same($0.version, building) }, "the version being built (\(building)) has a CHANGELOG.md entry")
 
+
+print("Hook verification")
+let hookTime = Date(timeIntervalSince1970: 1_700_000_000)
+let requestID = UUID(), otherID = UUID()
+var verification = HookVerification()
+check(verification.phase(now: hookTime) == .notInstalled, "a missing hook never counts as verified")
+verification.configure("definition-a")
+check(verification.phase(now: hookTime) == .unverified, "writing a hook is not evidence it ran")
+verification.begin(now: hookTime)
+check(verification.phase(now: hookTime) == .waiting, "starting a check waits for a real request")
+verification.progressed(sessionID: "s", since: hookTime.addingTimeInterval(1), runningOrDone: true, now: hookTime)
+check(verification.phase(now: hookTime) == .waiting, "transcript activity alone cannot verify a connection")
+check(verification.phase(now: hookTime.addingTimeInterval(121)) == .timedOut, "a check without a request times out instead of succeeding")
+verification.received(id: requestID, sessionID: "s", now: hookTime)
+check(verification.phase(now: hookTime) == .received, "receiving a request still requires a reply")
+verification.replied(id: otherID, success: true, now: hookTime)
+check(verification.phase(now: hookTime) == .received, "a different request's reply cannot complete this check")
+verification.replied(id: requestID, success: true, now: hookTime.addingTimeInterval(1))
+check(verification.phase(now: hookTime.addingTimeInterval(1)) == .replied, "socket delivery alone never completes setup")
+verification.disconnected(id: requestID)
+check(verification.phase(now: hookTime.addingTimeInterval(1)) == .replied, "closing the answered connection does not discard its reply evidence")
+verification.progressed(sessionID: "different-session", since: hookTime.addingTimeInterval(2), runningOrDone: true, now: hookTime.addingTimeInterval(2))
+verification.progressed(sessionID: "s", since: hookTime, runningOrDone: true, now: hookTime.addingTimeInterval(2))
+verification.progressed(sessionID: "s", since: hookTime.addingTimeInterval(2), runningOrDone: false, now: hookTime.addingTimeInterval(2))
+check(verification.phase(now: hookTime.addingTimeInterval(2)) == .replied, "a different session, old transcript or another waiting/error state cannot verify a reply")
+verification.progressed(sessionID: "s", since: hookTime.addingTimeInterval(2), runningOrDone: true, now: hookTime.addingTimeInterval(2))
+check(verification.phase(now: hookTime.addingTimeInterval(2)) == .verified, "setup completes only after the matching session advances past the reply")
+let savedVerification = verification.saved
+var passiveCheck = verification
+passiveCheck.received(id: otherID, sessionID: "s", now: hookTime.addingTimeInterval(3))
+passiveCheck.disconnected(id: otherID)
+check(passiveCheck.phase(now: hookTime.addingTimeInterval(3)) == .verified, "answering normally in the agent keeps an earlier successful check")
+passiveCheck.received(id: otherID, sessionID: "s", now: hookTime.addingTimeInterval(4))
+passiveCheck.replied(id: otherID, success: false, now: hookTime.addingTimeInterval(5))
+check(passiveCheck.phase(now: hookTime.addingTimeInterval(5)) == .failed && passiveCheck.saved == nil,
+      "a later send failure invalidates even a previously verified connection")
+passiveCheck = verification
+passiveCheck.received(id: otherID, sessionID: "s", now: hookTime.addingTimeInterval(4))
+passiveCheck.replied(id: otherID, success: true, now: hookTime.addingTimeInterval(5))
+passiveCheck.progressed(sessionID: "s", since: hookTime.addingTimeInterval(6), runningOrDone: true, now: hookTime.addingTimeInterval(6))
+check(passiveCheck.verifiedAt == hookTime.addingTimeInterval(6), "a later successful round trip refreshes the last verified date")
+check(HookVerification(saved: HookVerification.Saved(digest: "definition-a", verifiedAt: hookTime.addingTimeInterval(60))).phase(now: hookTime) != .verified,
+      "a future saved date cannot claim verification")
+check(savedVerification != nil && HookVerification(saved: savedVerification).phase(now: hookTime.addingTimeInterval(3)) == .verified, "completed evidence survives an app restart")
+let savedJSON = String(data: try! JSONEncoder().encode(savedVerification!), encoding: .utf8)!
+check(!savedJSON.contains(requestID.uuidString) && !savedJSON.contains("sessionID"), "saved evidence contains no session IDs or commands")
+check(verification.phase(now: hookTime.addingTimeInterval(86403)) == .unverified, "old evidence asks for a fresh check rather than claiming a continuous connection")
+verification.configure("definition-a")
+check(verification.verifiedAt != nil, "an unchanged hook keeps its last verification")
+verification.begin(now: hookTime.addingTimeInterval(4))
+check(verification.saved == nil && verification.phase(now: hookTime.addingTimeInterval(4)) == .waiting, "rechecking clears persisted readiness until a new round trip completes")
+verification.received(id: requestID, sessionID: "s", now: hookTime.addingTimeInterval(5))
+verification.disconnected(id: requestID)
+check(verification.phase(now: hookTime.addingTimeInterval(5)) == .interrupted, "answering in the agent or losing the client leaves setup incomplete")
+verification.received(id: requestID, sessionID: "s", now: hookTime)
+verification.replied(id: requestID, success: false, now: hookTime)
+check(verification.phase(now: hookTime) == .failed, "a failed send cannot verify the hook")
+verification.configure("definition-b")
+check(verification.verifiedAt == nil && verification.phase(now: hookTime) == .unverified, "editing a hook invalidates its earlier evidence")
+verification.configure(nil)
+check(verification.phase(now: hookTime) == .notInstalled && verification.saved == nil, "removing a hook clears readiness and its saved evidence")
+verification.configure("definition-a")
+verification.received(id: requestID, sessionID: "", now: hookTime)
+check(verification.phase(now: hookTime) == .unverified, "a request without a session cannot verify anything")
+verification.received(id: requestID, sessionID: "s", now: hookTime)
+verification.replied(id: requestID, success: true, now: hookTime)
+verification.progressed(sessionID: "s", since: hookTime.addingTimeInterval(122), runningOrDone: true, now: hookTime.addingTimeInterval(122))
+check(verification.phase(now: hookTime.addingTimeInterval(122)) == .timedOut, "unrelated later work cannot complete an expired check")
+let verificationPath = root + "/verify-hooks.json"
+let verificationHooks = Hooks(agent: .claude, path: verificationPath, port: 47621, token: tokenA)
+try! verificationHooks.install()
+let originalDigest = verificationHooks.verificationDigest
+check(originalDigest != nil && originalDigest == verificationHooks.verificationDigest, "complete installed hooks have a stable digest")
+try! SettingsFile.edit(verificationPath) { d in d["unrelated"] = "setting" }
+check(verificationHooks.verificationDigest == originalDigest, "unrelated settings do not invalidate hook evidence")
+try! SettingsFile.edit(verificationPath) { d in
+    var hooks = d["hooks"] as! [String: Any]
+    hooks["PreToolUse"] = nil
+    d["hooks"] = hooks
+}
+check(verificationHooks.verificationDigest == nil, "a partial Claude install cannot inherit verification")
+try! verificationHooks.install()
+let anotherPort = Hooks(agent: .claude, path: verificationPath, port: 47622, token: tokenA)
+try! anotherPort.repoint()
+check(anotherPort.verificationDigest != originalDigest && verificationHooks.verificationDigest == nil, "a moved port requires a new check and cannot validate the old listener")
+try! SettingsFile.edit(verificationPath) { $0["disableAllHooks"] = true }
+check(anotherPort.verificationDigest == nil, "Claude's global hook disable flag invalidates readiness")
+
+
+print("Codex hook review")
+let reviewPath = root + "/codex/hooks.json"
+let reviewCommand = "/usr/bin/curl -H test http://127.0.0.1/"
+let reviewHook: [String: Any] = ["sourcePath": reviewPath, "eventName": "permissionRequest", "command": reviewCommand,
+                               "trustStatus": "trusted", "enabled": true]
+func reviewResult(_ hook: [String: Any], config: [String: Any] = [:]) -> CodexHookReview {
+    CodexHookReview.parse(hooks: ["data": [["hooks": [hook], "errors": []]]], config: config, path: reviewPath, command: reviewCommand)
+}
+check(reviewResult(reviewHook) == .enabled, "Codex's enabled and trusted flags permit a live test but do not themselves verify answering")
+var reviewedHook = reviewHook
+reviewedHook["trustStatus"] = "untrusted"
+check(reviewResult(reviewedHook) == .needsTrust, "an installed but untrusted Codex hook asks for review")
+reviewedHook["trustStatus"] = "modified"
+check(reviewResult(reviewedHook) == .modified, "a changed Codex hook asks for renewed review")
+reviewedHook = reviewHook; reviewedHook["enabled"] = false
+check(reviewResult(reviewedHook) == .disabled, "a disabled Codex hook cannot be called ready")
+check(reviewResult(reviewHook, config: ["config": ["features": ["hooks": false]]]) == .disabled, "Codex's global disable flag wins over per-hook enablement")
+check(reviewResult(reviewHook, config: ["config": ["features": ["codex_hooks": false]]]) == .disabled, "the older feature alias is recognised too")
+reviewedHook = reviewHook; reviewedHook["command"] = "another hook"
+check(reviewResult(reviewedHook) == .missing, "another command cannot stand in for Muster's hook")
+reviewedHook = reviewHook; reviewedHook["sourcePath"] = root + "/other/hooks.json"
+check(reviewResult(reviewedHook) == .missing, "a hook from another config source cannot stand in for the current install")
+reviewedHook = reviewHook; reviewedHook["eventName"] = "stop"
+check(reviewResult(reviewedHook) == .missing, "trusting another event does not prove approval hooks are trusted")
+reviewedHook = reviewHook; reviewedHook["trustStatus"] = "a-future-value"
+check(reviewResult(reviewedHook) == .unavailable, "unknown Codex schemas fall back to the live check without claiming success")
+check(CodexHookReview.parse(hooks: [:], config: [:], path: reviewPath, command: reviewCommand) == .unavailable, "missing API results do not imply readiness")
+var baselineCheck = HookVerification()
+baselineCheck.configure("definition")
+baselineCheck.received(id: requestID, sessionID: "s", baseline: hookTime.addingTimeInterval(10), now: hookTime)
+baselineCheck.replied(id: requestID, success: true, now: hookTime)
+baselineCheck.progressed(sessionID: "s", since: hookTime.addingTimeInterval(10), runningOrDone: true, now: hookTime.addingTimeInterval(10))
+check(baselineCheck.phase(now: hookTime.addingTimeInterval(10)) == .replied, "a cached timestamp from before receipt cannot prove the session resumed")
+baselineCheck.progressed(sessionID: "s", since: hookTime.addingTimeInterval(60), runningOrDone: true, now: hookTime.addingTimeInterval(10))
+check(baselineCheck.phase(now: hookTime.addingTimeInterval(10)) == .replied, "a future timestamp cannot manufacture successful verification")
+
+
+let earlyExit = root + "/codex-exit-after-handshake"
+try! "#!/bin/sh\nread line\nprintf '%s\\n' '{\"id\":1,\"result\":{}}'\nexit 0\n".write(toFile: earlyExit, atomically: true, encoding: .utf8)
+try! fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: earlyExit)
+let earlyResults = (0..<10).map { _ in CodexHookReview.read(executable: earlyExit, hookPath: reviewPath, command: reviewCommand, home: root, timeout: 0.2) }
+check(earlyResults.allSatisfy { $0 == .unavailable }, "a client exiting between handshake messages cannot SIGPIPE Muster")
+let stalled = root + "/codex-stalled"
+try! "#!/bin/sh\nexec /bin/sleep 30\n".write(toFile: stalled, atomically: true, encoding: .utf8)
+try! fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stalled)
+let beforeReviewTimeout = Date()
+let stalledResult = CodexHookReview.read(executable: stalled, hookPath: reviewPath, command: reviewCommand, home: root, timeout: 0.1)
+check(stalledResult == .unavailable && Date().timeIntervalSince(beforeReviewTimeout) < 1, "a stalled status client is killed and reaped within its deadline")
+
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")
 exit(failures == 0 ? 0 : 1)

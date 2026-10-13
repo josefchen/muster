@@ -91,7 +91,10 @@ final class Attention {
         if expandedFor != nil, expandedFor != key(first) { expandedFor = nil }   // a new prompt starts folded
         let open = prompt != nil && expandedFor == key(first)
         row.show(first, now: Date(), unfolded: open, trailing: false)
-        let hints = Self.hints(prompt, open: open, more: pending.count - 1, offerAnswering: prompt == nil && !answering(first.agent))
+        var hints = Self.hints(prompt, open: open, more: pending.count - 1, offerAnswering: prompt == nil && !answering(first.agent))
+        if prompt == nil, first.agent != .cursor, answering(first.agent) {
+            hints.append(KeyHint([], "Approval missing here? Check the connection in Settings"))
+        }
         let dark = surface.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if hints != shownHints?.0 || dark != shownHints?.1 {
             shownHints = (hints, dark)

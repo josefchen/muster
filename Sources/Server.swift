@@ -31,9 +31,16 @@ final class HookServer {
 
         /// Answers with a JSON body (empty steps aside) and closes.
         func reply(_ body: Data) {
+            deliver(body) { _ in }
+        }
+
+        func deliver(_ body: Data, completion: @escaping (Bool) -> Void) {
             let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
             let c = connection
-            c.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in c.cancel() })
+            c.send(content: Data(head.utf8) + body, completion: .contentProcessed { error in
+                completion(error == nil)
+                c.cancel()
+            })
         }
 
         /// Runs when the connection ends, answered or not.

@@ -106,19 +106,25 @@ private struct SettingsView: View {
             }
             Section {
                 ForEach([Agent.claude, Agent.codex], id: \.self) { agent in
-                    Toggle(isOn: Binding(get: { answering[agent] ?? false }, set: { on in
-                        do {
-                            try on ? HookInstaller.install(agent) : HookInstaller.uninstall(agent)
-                            answerError = nil
-                        } catch { answerError = error.localizedDescription }
-                        answering[agent] = HookInstaller.isInstalled(agent)
-                    })) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(agent == .claude ? "Claude Code" : "Codex")
-                            Text(agent == .claude ? "Permissions, questions and plans" : "Approvals. Trust the hook once in Codex with /hooks")
-                                .font(.caption).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle(isOn: Binding(get: { answering[agent] ?? false }, set: { on in
+                            do {
+                                try on ? HookInstaller.install(agent) : HookInstaller.uninstall(agent)
+                                answerError = nil
+                            } catch { answerError = error.localizedDescription }
+                            answering[agent] = HookInstaller.isInstalled(agent)
+                        })) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(agent == .claude ? "Claude Code" : "Codex")
+                                Text(agent == .claude ? "Permissions, questions and plans" : "Approvals; also enable the hook in Codex")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
                         }
+                        .accessibilityLabel("Answer \(agent == .claude ? "Claude Code" : agent.name) prompts from Muster")
+                        if answering[agent] == true { HookSetupView(agent: agent) }
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("approval-row-\(agent.rawValue)")
                 }
                 if let answerError { Text(answerError).font(.callout).foregroundStyle(.orange) }
                 if !broken.isEmpty {
@@ -216,6 +222,7 @@ private struct SettingsView: View {
     }
 
     private func refresh() {
+        HookSetup.shared.refresh()
         sources = Store.shared.sources
         answering = [.claude: HookInstaller.isInstalled(.claude), .codex: HookInstaller.isInstalled(.codex)]
         broken = HookInstaller.brokenClaudeHooks()

@@ -632,6 +632,7 @@ struct State {
     var keys: [String] { raw["keys"] as? [String] ?? [] }
     var whatsNew: String? { raw["whatsNew"] as? String }
     func source(_ agent: String) -> String? { (raw["sources"] as? [String: String])?[agent] }
+    func hookSetup(_ agent: String) -> String? { (raw["hookSetup"] as? [String: String])?[agent] }
     var hookPort: UInt16 { UInt16(raw["hookPort"] as? Int ?? 0) }
     func hooks(_ agent: String) -> Bool { (raw["hooks"] as? [String: Bool])?[agent] == true }
     var opened: Int { raw["opened"] as? Int ?? 0 }

@@ -214,6 +214,29 @@ struct Hooks {
 
     /// This install's hooks are there and call this port.
     var isInstalled: Bool { mine.contains(where: calls) }
+    var commandForReview: String? { mine.filter(calls).compactMap { $0["command"] as? String }.first }
+
+    /// Digest just the definitions owned by this install, including their event
+    /// and matcher. A partial install must never inherit a completed check.
+    var verificationDigest: String? {
+        guard let settings = SettingsFile.read(path),
+              settings["disableAllHooks"] as? Bool != true,
+              let events = settings["hooks"] as? [String: Any] else { return nil }
+        var definitions: [[String: Any]] = []
+        for (event, _) in groups {
+            let owned = (events[event] as? [[String: Any]] ?? []).flatMap { group -> [[String: Any]] in
+                (group["hooks"] as? [[String: Any]] ?? []).filter { isMine($0) && calls($0) }.map {
+                    ["event": event, "matcher": group["matcher"] ?? "", "handler": $0]
+                }
+            }
+            guard !owned.isEmpty else { return nil }
+            definitions += owned
+        }
+        guard !definitions.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: ["path": URL(fileURLWithPath: path).resolvingSymlinksInPath().path,
+                                                                      "definitions": definitions], options: [.sortedKeys]) else { return nil }
+        return HookVerification.digest(data)
+    }
 
     /// This install's hooks call an earlier port: the server had to move.
     var isStale: Bool { mine.contains { !calls($0) } }

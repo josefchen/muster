@@ -63,6 +63,7 @@ final class Welcome {
     private func close() { window?.close() }
 
     private func closed() {
+        HookSetup.shared.stopChecking()
         if model.reachedEnd, !Store.demo, model.openAtLogin != Settings.launchAtLogin { Settings.launchAtLogin = model.openAtLogin }
         UserDefaults.standard.set(true, forKey: "launched")
         switcher.practice = false
@@ -128,14 +129,26 @@ final class OnboardingModel: ObservableObject {
     @Published var openAtLogin = true
     var finish: (() -> Void)?
 
+    init(startAt: Step = .hello) { step = startAt }
+
     var steps: [Step] { Step.allCases.filter { $0 != .answer || !answerable.isEmpty } }
     var answerable: [Agent] { [.claude, .codex].filter(installed) }
+    var pendingAnswering: [Agent] { answerable.filter { hooks[$0] == true && HookSetup.shared.check($0).phase() != .verified } }
+    var canContinue: Bool { step != .answer || pendingAnswering.isEmpty }
+    var continueTitle: String {
+        switch step {
+        case .hello: return "Get Started"
+        case .notify: return pendingAnswering.isEmpty ? "Use Muster" : "Finish later"
+        case .answer: return answerable.contains(where: { hooks[$0] == true }) ? "Continue" : "Use switching only"
+        default: return "Continue"
+        }
+    }
     var position: Int { steps.firstIndex(of: step) ?? 0 }
 
     func installed(_ agent: Agent) -> Bool {
         switch sources[agent] {
         case .ok, .unreadable: return true
-        case .notInstalled, nil: return false
+        case .notInstalled, nil: return agent.icon != nil
         }
     }
 
@@ -145,7 +158,7 @@ final class OnboardingModel: ObservableObject {
         reachedEnd = false
         triedSwitcher = false
         triedSearch = false
-        openAtLogin = true
+        openAtLogin = UserDefaults.standard.bool(forKey: "launched") ? Settings.launchAtLogin : true
     }
 
     /// `--demo --step 3` opens the tour on that page (0 is hello), for screenshots.
@@ -168,10 +181,15 @@ final class OnboardingModel: ObservableObject {
         step = steps[position - 1]
     }
 
+    func revisitAnswering() { forward = false; step = .answer }
+    func revisitShortcuts() { forward = false; step = .tryIt }
+    func skipAnswering() { HookSetup.shared.stopChecking(); next() }
+
     func refresh() {
         sources = Store.shared.sources
         Notifier.status { [weak self] in self?.notifications = $0 }
         guard !Store.demo else { return }
+        HookSetup.shared.refresh()
         hooks = [.claude: HookInstaller.isInstalled(.claude), .codex: HookInstaller.isInstalled(.codex)]
         broken = HookInstaller.brokenClaudeHooks()
     }
@@ -215,6 +233,7 @@ final class OnboardingModel: ObservableObject {
 
 private struct OnboardingView: View {
     @ObservedObject var model: OnboardingModel
+    @ObservedObject private var setup = HookSetup.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -262,27 +281,25 @@ private struct OnboardingView: View {
             if model.position > 0 {
                 Button("Back", action: model.back)
                     .controlSize(.large)
-                    .keyboardShortcut(.leftArrow, modifiers: [])
+                    .keyboardShortcut("[", modifiers: .command)
+            }
+            if model.step == .answer, !model.pendingAnswering.isEmpty {
+                Button("Set up later", action: model.skipAnswering)
+                    .controlSize(.large)
             }
             Button(action: model.next) {
-                Text(primaryTitle).frame(minWidth: 110)
+                Text(model.continueTitle).frame(minWidth: 110)
             }
             .controlSize(.large)
             .buttonStyle(.borderedProminent)
             .keyboardShortcut(.defaultAction)
+            .disabled(!model.canContinue)
         }
         .padding(.horizontal, 28)
         .padding(.bottom, 24)
         .padding(.top, 8)
     }
 
-    private var primaryTitle: String {
-        switch model.step {
-        case .hello: return "Get Started"
-        case .notify: return "Done"
-        default: return "Continue"
-        }
-    }
 }
 
 private struct Header: View {
@@ -388,7 +405,7 @@ private struct AgentRow: View {
     private var detail: String {
         switch state {
         case nil: return "Looking…"
-        case .notInstalled: return "Not on this Mac. Muster picks it up when you install it."
+        case .notInstalled: return agent.icon == nil ? "Not on this Mac. Muster picks it up when you install it." : "No saved sessions yet. Start one to see it here."
         case .ok, .unreadable: return state!.summary
         }
     }
@@ -399,7 +416,7 @@ private struct AgentRow: View {
         case .ok: Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(.green)
                 .symbolEffect(.bounce, value: state)
         case .unreadable: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 18)).foregroundStyle(.orange)
-        case .notInstalled: Text("Not found").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
+        case .notInstalled: Text(agent.icon == nil ? "Not found" : "No sessions yet").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
         }
     }
 }
@@ -537,29 +554,50 @@ private struct Keycap: View {
 
 private struct AnswerPage: View {
     @ObservedObject var model: OnboardingModel
-    @State private var copied = false
+
+    @State private var showPreview = false
+    @State private var selectedAgent: Agent = .codex
+
+    private var currentAgent: Agent? { model.answerable.first(where: { $0 == selectedAgent }) ?? model.answerable.first }
 
     var body: some View {
-        VStack(spacing: 22) {
-            Spacer(minLength: 24)
-            Header(title: "Answer without switching",
-                   subtitle: "When an agent asks, an alert at the top of your screen shows the keys that answer it. Try them on this one.")
-            PromptPreview()
-            Card {
-                ForEach(Array(model.answerable.enumerated()), id: \.element) { i, agent in
-                    if i > 0 { Divider().padding(.leading, 62) }
-                    hookRow(agent)
+        ScrollView {
+            VStack(spacing: 18) {
+                Header(title: "Connect approvals",
+                       subtitle: "Switching and search already work. Connect an agent below to answer its requests from Muster.")
+                    .padding(.top, 24)
+                if model.answerable.count > 1 {
+                    Picker("Agent to connect", selection: $selectedAgent) {
+                        ForEach(model.answerable, id: \.self) { agent in
+                            Text(agent == .claude ? "Claude Code" : agent.name).tag(agent)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 460)
                 }
+                if let agent = currentAgent {
+                    Card { hookRow(agent) }.frame(width: 460)
+                }
+                if let error = model.hookError {
+                    Text(error).font(.callout).foregroundStyle(.orange).frame(width: 460, alignment: .leading)
+                }
+                if !model.broken.isEmpty { brokenNote }
+                if model.installed(.cursor) {
+                    Text("Cursor prompts open in Cursor.").font(.caption).foregroundStyle(.secondary)
+                }
+                DisclosureGroup("Practice the keys with a sample alert", isExpanded: $showPreview) {
+                    VStack(spacing: 10) {
+                        Text("This is a sample. It does not verify your hooks.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        PromptPreview()
+                    }.padding(.top, 10)
+                }
+                .frame(width: 460)
+                Text("Muster verifies each connection only after a request arrives, you answer from Muster, and that session resumes. You can finish later in Settings.")
+                    .font(.caption).foregroundStyle(.secondary).frame(width: 460, alignment: .leading)
             }
-            .frame(width: 460)
-            if let error = model.hookError {
-                Text(error).font(.callout).foregroundStyle(.orange).frame(width: 460, alignment: .leading)
-            }
-            if !model.broken.isEmpty { brokenNote }
-            if model.installed(.cursor) {
-                Text("Cursor prompts open in Cursor.").font(.caption).foregroundStyle(.tertiary)
-            }
-            Spacer(minLength: 24)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -570,7 +608,7 @@ private struct AnswerPage: View {
                 if let icon = agent.icon { Image(nsImage: icon).resizable().frame(width: 34, height: 34) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(agent == .claude ? "Claude Code" : "Codex").font(.system(size: 14, weight: .semibold))
-                    Text(agent == .claude ? "Permissions, questions and plans" : "Approvals")
+                    Text(on ? "Hook installed; check its connection below" : (agent == .claude ? "Permissions, questions and plans" : "Approvals"))
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -581,16 +619,8 @@ private struct AnswerPage: View {
             Text("Adds one hook to \(HookInstaller.displayPath(agent)) and keeps a backup.")
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
                 .padding(.leading, 48)
-            if agent == .codex, on {
-                HStack(spacing: 8) {
-                    Text("Then run /hooks in Codex once to trust it.").font(.system(size: 12))
-                    Button(copied ? "Copied" : "Copy /hooks") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString("/hooks", forType: .string)
-                        copied = true
-                    }
-                    .controlSize(.small)
-                }
+            if on {
+                HookSetupView(agent: agent).id(agent)
                 .padding(.leading, 48)
             }
         }
@@ -725,6 +755,7 @@ struct KeyHintView: View {
 
 private struct NotifyPage: View {
     @ObservedObject var model: OnboardingModel
+    @ObservedObject private var keys = Hotkeys.shared
 
     var body: some View {
         VStack(spacing: 26) {
@@ -756,6 +787,28 @@ private struct NotifyPage: View {
                 .padding(14)
             }
             .frame(width: 460)
+            if !model.answerable.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(keys.conflicts.isEmpty ? "Switching and search are available" : "Shortcuts need attention",
+                          systemImage: keys.conflicts.isEmpty ? "checkmark.circle" : "exclamationmark.circle")
+                        .font(.callout.weight(.semibold))
+                    if !keys.conflicts.isEmpty {
+                        Button("Choose free shortcuts", action: model.revisitShortcuts)
+                    }
+                    ForEach(model.answerable, id: \.self) { agent in
+                        let on = model.hooks[agent] == true
+                        let verified = on && HookSetup.shared.check(agent).phase() == .verified
+                        Text("\(agent == .claude ? "Claude Code" : agent.name) answering: \(verified ? "verified" : (on ? "check still pending" : "off"))")
+                            .font(.caption).foregroundStyle(verified ? Color.secondary : Color.orange)
+                    }
+                    if !model.pendingAnswering.isEmpty || model.answerable.contains(where: { model.hooks[$0] != true }) {
+                        Button("Finish answering setup", action: model.revisitAnswering)
+                    }
+                }
+                .frame(width: 436, alignment: .leading)
+                .padding(12)
+                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
+            }
             Spacer(minLength: 24)
         }
     }
@@ -907,6 +960,29 @@ enum Installer {
                               "if [ -n \"$1\" ]; then /bin/sleep 1; /usr/bin/hdiutil detach -quiet \"$1\"; fi",
                               dest.path, (translocated || mounted) ? diskImage(of: path) ?? "" : ""]
         try? relaunch.run()
+        return true
+    }
+}
+
+
+/// A native preview only in the isolated e2e build. It registers no global keys
+/// and cannot open or edit the user's agents.
+enum OnboardingPreview {
+    private static var window: NSWindow?
+    static func show(step: OnboardingModel.Step, dark: Bool) -> Bool {
+        guard E2E.on, ProcessInfo.processInfo.environment["MUSTER_ONBOARDING_PREVIEW"] == "1" else { return false }
+        let model = OnboardingModel(startAt: step)
+        model.refresh()
+        let w = window ?? NSWindow(contentRect: NSRect(x: 0, y: 0, width: 580, height: 640),
+                                    styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.isReleasedWhenClosed = false
+        w.title = "Muster onboarding preview"
+        w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        w.contentView = NSHostingView(rootView: OnboardingView(model: model))
+        model.finish = { [weak w] in HookSetup.shared.stopChecking(); w?.close() }
+        window = w
+        w.center()
+        w.makeKeyAndOrderFront(nil)
         return true
     }
 }

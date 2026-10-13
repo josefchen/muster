@@ -116,8 +116,14 @@ Turn it on per agent in **Settings → Answer prompts from Muster**.
 | | What you can answer |
 |---|---|
 | **Claude Code** | Permission requests, multiple-choice questions, plan approvals |
-| **Codex** | Approval requests (trust the hook once with `/hooks` in Codex) |
+| **Codex** | Approval requests (enable and trust the Muster hook in Codex Settings → Hooks, or `/hooks` in the CLI) |
 | **Cursor** | Opens the prompt in Cursor |
+
+The tour and Settings show each connection's progress. For Codex, Muster reads the client's hook status when supported, so a disabled, untrusted or changed hook stays pending. It never enables or trusts hooks on your behalf.
+
+Use **Copy check prompt**, paste it into a local agent session that asks for approval, and answer the request from Muster. The connection is verified only when the request arrives, the answer is delivered, and the same session resumes in its transcript. The sample alert in the tour is practice and does not verify anything. Full access or automatic approval can skip this test because no permission request is made.
+
+You can choose **Set up later** and use switching and search immediately. Unfinished answering setup remains visible in Settings and the menu. Verification records the last successful check, rather than a continuous connection: changed hooks require another check, and evidence older than a day is no longer marked current.
 
 Muster adds one hook to the agent's own settings and removes exactly that when you turn it off. Beside the file it keeps `.muster-original`, the file as it was before Muster first changed it, and `.muster-backup`, the file before the latest change. A symlinked settings file stays a link, and a file Muster can't parse is left alone. Claude's native dialog stays live alongside Muster, and the first answer wins. If Muster isn't running, the agent asks as usual. Hooks talk to Muster on `127.0.0.1` with a per-install token.
 

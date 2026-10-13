@@ -98,6 +98,10 @@ final class StatusItem: NSObject {
             }
             menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Usage…", action: #selector(usage), keyEquivalent: "").target = self
+            HookSetup.shared.refresh()
+            if !HookSetup.shared.pending.isEmpty {
+                menu.addItem(withTitle: "Finish approval setup…", action: #selector(settings), keyEquivalent: "").target = self
+            }
             menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
             menu.addItem(.separator())
             menu.addItem(withTitle: "Quit Muster", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

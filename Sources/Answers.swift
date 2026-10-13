@@ -75,7 +75,9 @@ final class Prompts {
 
     private(set) var pending: [UUID: Prompt] = [:]
     private var replies: [UUID: (Data) -> Void] = [:]
+    private var deliveries: [UUID: (Data, @escaping (Bool) -> Void) -> Void] = [:]
     private var raw: [UUID: [String: Any]] = [:]
+    private var guided: Set<UUID> = []
     private let server = HookServer(ports: Prompts.ports)
     var onChange: (() -> Void)?
 
@@ -164,7 +166,12 @@ final class Prompts {
         default:
             return
         }
-        reply(out.flatMap { try? JSONSerialization.data(withJSONObject: $0) } ?? Data())
+        let data = out.flatMap { try? JSONSerialization.data(withJSONObject: $0) } ?? Data()
+        if let deliver = deliveries[p.id] {
+            deliver(data) { success in
+                HookSetup.shared.replied(p, success: success)
+            }
+        } else { reply(data) }
         drop(p.id)
         Stats.record(.answered)
         Store.shared.refreshPrompts()
@@ -186,9 +193,15 @@ final class Prompts {
         drop(id)
     }
 
+    func endGuidedChecks() {
+        for id in Array(guided) { release(id) }
+        Store.shared.refreshPrompts()
+    }
+
     /// Once you've moved on in the agent itself (its transcript advanced past the
     /// prompt), the held hook is stale.
     func resolve(with sessions: [Session]) {
+        HookSetup.shared.progressed(sessions)
         for p in pending.values {
             guard let s = sessions.first(where: { $0.agent == p.agent && $0.sid == p.sessionID }) else { continue }
             if s.since > p.created.addingTimeInterval(1), s.status != .needsYou { release(p.id) }
@@ -197,7 +210,8 @@ final class Prompts {
 
     private func releaseIfWatched() {
         guard let front = NSWorkspace.shared.frontmostApplication else { return }
-        for p in pending.values where p.blocksNative && isHost(front, of: p) { release(p.id) }
+        for p in pending.values where p.blocksNative && isHost(front, of: p)
+            && !(guided.contains(p.id) && HookSetup.shared.isGuidedCheck(p.agent)) { release(p.id) }
         Store.shared.refreshPrompts()
     }
 
@@ -209,7 +223,8 @@ final class Prompts {
     }
 
     private func expire() {
-        for p in pending.values where Date().timeIntervalSince(p.created) > Self.maxHold(p.agent) { release(p.id) }
+        for p in pending.values where Date().timeIntervalSince(p.created) > Self.maxHold(p.agent)
+            || (guided.contains(p.id) && !HookSetup.shared.isGuidedCheck(p.agent)) { release(p.id) }
         Store.shared.refreshPrompts()
     }
 
@@ -217,6 +232,8 @@ final class Prompts {
         pending[id] = nil
         replies[id] = nil
         raw[id] = nil
+        deliveries[id] = nil
+        guided.remove(id)
         onChange?()
     }
 
@@ -226,14 +243,23 @@ final class Prompts {
         guard r.headers["x-muster-token"] == token,
               let input = (try? JSONSerialization.jsonObject(with: r.body)) as? [String: Any],
               let prompt = parse(r.path, input) else { x.reply(Data()); return }
-        if prompt.blocksNative, let front = NSWorkspace.shared.frontmostApplication, isHost(front, of: prompt) {
+        HookSetup.shared.received(prompt)
+        let checking = HookSetup.shared.isGuidedCheck(prompt.agent)
+        if prompt.blocksNative, !checking, let front = NSWorkspace.shared.frontmostApplication, isHost(front, of: prompt) {
+            HookSetup.shared.disconnected(prompt)
             x.reply(Data())
             return
         }
         pending[prompt.id] = prompt
+        if checking { guided.insert(prompt.id) }
         replies[prompt.id] = x.reply
+        deliveries[prompt.id] = x.deliver
         raw[prompt.id] = input
-        x.onClose { DispatchQueue.main.async { [weak self] in self?.drop(prompt.id); Store.shared.refreshPrompts() } }
+        x.onClose { DispatchQueue.main.async { [weak self] in
+            HookSetup.shared.disconnected(prompt)
+            self?.drop(prompt.id)
+            Store.shared.refreshPrompts()
+        } }
         onChange?()
         Store.shared.refreshPrompts()
     }
@@ -243,7 +269,8 @@ final class Prompts {
         let cwd = d["cwd"] as? String ?? ""
         let tool = d["tool_name"] as? String ?? ""
         let input = d["tool_input"] as? [String: Any] ?? [:]
-        let agent: Agent = path.hasPrefix("/codex") ? .codex : .claude
+        guard ["/claude/permission", "/claude/question", "/codex/permission"].contains(path), !sid.isEmpty else { return nil }
+        let agent: Agent = path.hasPrefix("/codex/") ? .codex : .claude
         if path.hasSuffix("/permission") {
             let command = (input["command"] as? String) ?? (input["command"] as? [String])?.joined(separator: " ")
             let summary = command ?? (input["file_path"] as? String) ?? (input["description"] as? String)
@@ -319,9 +346,18 @@ enum HookInstaller {
 
     static func isInstalled(_ agent: Agent) -> Bool { hooks(agent)?.isInstalled ?? false }
     static func hasStale(_ agent: Agent) -> Bool { hooks(agent)?.isStale ?? false }
-    static func install(_ agent: Agent) throws { try hooks(agent)?.install() }
-    static func repoint(_ agent: Agent) throws { try hooks(agent)?.repoint() }
-    static func uninstall(_ agent: Agent) throws { try hooks(agent)?.uninstall() }
+    static var codexCommandForReview: String? { hooks(.codex)?.commandForReview }
+    static func verificationDigest(_ agent: Agent) -> String? {
+        guard let digest = hooks(agent)?.verificationDigest else { return nil }
+        // Feature switches and trust changes in Codex config invalidate earlier evidence.
+        guard agent == .codex else { return digest }
+        let config = (codexHooks as NSString).deletingLastPathComponent + "/config.toml"
+        let data = (try? Data(contentsOf: URL(fileURLWithPath: config))) ?? Data()
+        return HookVerification.digest(Data(digest.utf8) + data)
+    }
+    static func install(_ agent: Agent) throws { try hooks(agent)?.install(); HookSetup.shared.refresh() }
+    static func repoint(_ agent: Agent) throws { try hooks(agent)?.repoint(); HookSetup.shared.refresh() }
+    static func uninstall(_ agent: Agent) throws { try hooks(agent)?.uninstall(); HookSetup.shared.refresh() }
 
     static func displayPath(_ agent: Agent) -> String {
         let path = agent == .claude ? claudeSettings : codexHooks

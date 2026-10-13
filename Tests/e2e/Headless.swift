@@ -80,6 +80,7 @@ final class Headless {
     func run() {
         startup()
         installHooks()
+        setupChecks()
         pipeline()
         roundTrips()
         opening()
@@ -269,6 +270,105 @@ final class Headless {
         loadHooks()
     }
 
+
+    private func setupChecks() {
+        section("Hook setup: real request, reply, resumed session")
+        check(app.state()?.hookSetup("claude") == "unverified" && app.state()?.hookSetup("codex") == "unverified",
+              "installing hooks alone leaves both agents unverified")
+        let onboarding = app.post("/onboarding-state", ["step": 3])
+        check(onboarding?["canContinue"] as? Bool == false && (onboarding?["pending"] as? [String])?.count == 2,
+              "onboarding cannot claim completion while opted-in agents remain unverified")
+        check(app.post("/onboarding-state", ["step": 4])?["title"] as? String == "Finish later",
+              "the final step honestly labels deferred setup")
+
+        app.post("/setup", ["agent": "claude"])
+        let c = ClaudeFixture(fx, project: "verify-claude")
+        c.write(c.user("Check connection"), c.toolUse("Bash", input: ["command": "printf check"]))
+        expect(app, "the test session is visible") { $0.status(c.id) == "working" }
+        let payload = c.permissionPayload(command: "printf check", suggestions: [])
+        _ = HTTP.request(permissionURL.port, "POST", permissionURL.path,
+                         headers: ["X-Muster-Token": "wrong"], body: json(payload), timeout: 2)
+        _ = HTTP.request(permissionURL.port, "POST", "/unrelated/permission", headers: claudeHeaders, body: json(payload), timeout: 2)
+        check(app.state()?.hookSetup("claude") == "waiting", "wrong tokens and lookalike routes cannot verify setup")
+        let req = claudeHook(permissionURL, payload)
+        let p = held("claude", c.sid, "permission", "a real Claude request reaches setup")
+        check(app.state()?.hookSetup("claude") == "received", "a received request is not marked complete")
+        answer(p, "allow")
+        reply(req, "the setup reply reaches the client with the exact allow JSON", Expect.allow)
+        expect(app, "delivery is recorded separately from session progress") { $0.hookSetup("claude") == "replied" }
+        pulse.append(pulse.user("Unrelated work"), pulse.reply())
+        expect(app, "another session advances") { $0.status(self.pulse.id) == "done" }
+        check(app.state()?.hookSetup("claude") == "replied", "another session cannot complete this connection check")
+        c.append(c.toolResult(), c.reply("Connection checked"))
+        expect(app, "only the matching session resuming completes Claude setup") { $0.hookSetup("claude") == "verified" }
+        app.stop()
+        check(app.launch(), "the app restarts with the same fixture")
+        check(app.state()?.hookSetup("claude") == "verified", "verified evidence survives restart for the same hook definition")
+        loadHooks()
+        app.post("/setup", ["agent": "claude"])
+        check(app.state()?.hookSetup("claude") == "waiting", "rechecking waits for new evidence rather than recycling the old transcript")
+        app.stop()
+        check(app.launch(), "the app restarts during an incomplete recheck")
+        check(app.state()?.hookSetup("claude") == "unverified", "an incomplete recheck never restores a previous ready state")
+        loadHooks()
+        if let fd = Net.connect(permissionURL.port) {
+            let body = json(payload)
+            var head = "POST \(permissionURL.path) HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            for (k, v) in claudeHeaders { head += "\(k): \(v)\r\n" }
+            Net.send(fd, Data((head + "Content-Length: \(body.count)\r\n\r\n").utf8) + body)
+            _ = held("claude", c.sid, "permission", "another request arrives for the recheck")
+            close(fd)
+        }
+        // A closed request without an answer must not acquire reply evidence.
+        expect(app, "a request answered outside Muster remains incomplete") { $0.hookSetup("claude") == "interrupted" }
+
+        let x = CodexFixture(fx, project: "verify-codex")
+        x.write(x.turnContext(), x.started())
+        x.register(title: "Codex connection check")
+        expect(app, "the Codex test session is visible") { $0.status(x.key) == "working" }
+        app.post("/setup", ["agent": "codex"])
+        app.act("front", ["agent": "codex"])
+        let run = codexHook(x.permissionPayload(command: "printf check"))
+        let xp = held("codex", x.id, "permission", "the installed Codex curl command reaches setup")
+        check(app.state()?.hookSetup("codex") == "received", "Codex is not ready merely because its command ran")
+        app.act("front", ["agent": "codex"])
+        check(app.state()?.prompt(agent: "codex", sid: x.id) != nil,
+              "an explicit check holds the request while the user pastes its prompt in Codex")
+        app.act("front", ["agent": NSNull()])
+
+        answer(xp, "deny")
+        let out = run.wait(5)
+        check(out?.status == 0 && sameJSON(out?.stdout, Expect.deny), "the installed command returns the exact deny JSON")
+        expect(app, "Codex setup waits for its transcript after sending the answer") { $0.hookSetup("codex") == "replied" }
+        x.append(x.completed())
+        expect(app, "a completed Codex round trip verifies setup") { $0.hookSetup("codex") == "verified" }
+        fx.write(".codex/config.toml", Data("[features]\nhooks = false\n".utf8))
+        check(app.state()?.hookSetup("codex") == "unverified", "changing Codex feature configuration invalidates previous evidence")
+        fx.remove(".codex/config.toml")
+        app.post("/setup", ["agent": "codex"])
+        let cancelled = codexHook(x.permissionPayload(command: "printf check"))
+        _ = held("codex", x.id, "permission", "a request is held for a fresh guided check")
+        app.post("/setup", ["agent": "codex", "cancel": true])
+        let handedBack = cancelled.wait(5)
+        check(handedBack?.status == 0 && handedBack?.stdout.isEmpty == true,
+              "skipping setup releases the test request without approving it")
+        check(app.state()?.hookSetup("codex") == "unverified", "cancelling the check leaves setup explicitly incomplete")
+
+        app.post("/hooks", ["agent": "codex", "install": false])
+        check(app.state()?.hookSetup("codex") == "notInstalled", "uninstalling clears Codex readiness")
+        app.post("/hooks", ["agent": "codex", "install": true])
+        check(app.state()?.hookSetup("codex") == "unverified", "reinstalling does not silently restore old verification")
+        app.post("/hooks", ["agent": "claude", "install": false])
+        app.post("/hooks", ["agent": "codex", "install": false])
+        let switchingOnly = app.post("/onboarding-state", ["step": 3])
+        check(switchingOnly?["canContinue"] as? Bool == true && switchingOnly?["title"] as? String == "Use switching only",
+              "users can deliberately continue with switching only without fake hook completion")
+        app.post("/hooks", ["agent": "claude", "install": true])
+        app.post("/hooks", ["agent": "codex", "install": true])
+
+        loadHooks()
+    }
+
     // MARK: status pipeline
 
     private func pipeline() {
@@ -282,7 +382,7 @@ final class Headless {
         expect(app, "…and the alert shows it") { $0.visible("alert") && $0.alertSession == c.id }
         expect(app, "…with ⌥Tab to go to it, and where to turn on answering when that's off") { s in
             let on = (s.raw["hooks"] as? [String: Bool])?["claude"] == true
-            return s.alertHints == (on ? "⌥Tab Go to it" : "⌥Tab Go to it, Reply from here: turn it on in Settings")
+            return s.alertHints == (on ? "⌥Tab Go to it, Approval missing here? Check the connection in Settings" : "⌥Tab Go to it, Reply from here: turn it on in Settings")
         }
         c.append(c.toolResult("SQLite"), c.reply("Switched the cache to SQLite."))
         expect(app, "Claude: the finished turn reads as done, unread") { $0.status(c.id) == "done" && $0.unread(c.id) == true }

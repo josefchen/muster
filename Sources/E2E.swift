@@ -210,6 +210,26 @@ enum E2E {
             }
             out["installed"] = HookInstaller.isInstalled(agent)
             return (200, out)
+        case ("POST", "/setup"):
+            guard let agent = (r.body["agent"] as? String).flatMap(Agent.init(rawValue:)), agent != .cursor else {
+                return (400, ["error": "unsupported agent"])
+            }
+            if r.body["cancel"] as? Bool == true { HookSetup.shared.stopChecking() }
+            else { HookSetup.shared.begin(agent) }
+            return (200, ["phase": HookSetup.shared.check(agent).phase().rawValue])
+        case ("POST", "/onboarding-preview"):
+            guard let step = (r.body["step"] as? Int).flatMap(OnboardingModel.Step.init(rawValue:)) else {
+                return (400, ["error": "invalid step"])
+            }
+            return (200, ["shown": OnboardingPreview.show(step: step, dark: r.body["dark"] as? Bool ?? false)])
+        case ("POST", "/onboarding-state"):
+            guard let step = (r.body["step"] as? Int).flatMap(OnboardingModel.Step.init(rawValue:)) else {
+                return (400, ["error": "invalid step"])
+            }
+            let model = OnboardingModel(startAt: step)
+            model.refresh()
+            return (200, ["canContinue": model.canContinue, "title": model.continueTitle,
+                          "pending": model.pendingAnswering.map(\.rawValue)])
         case ("POST", "/open"):
             if let url = r.body["url"] as? String {
                 handle(url)
@@ -346,6 +366,7 @@ enum E2E {
     }
 
     private static func state() -> [String: Any] {
+        HookSetup.shared.refresh()
         let sessions: [[String: Any]] = Store.shared.sessions.map { s in
             ["id": s.id, "agent": s.agent.rawValue, "sid": s.sid, "status": name(s.status), "unread": s.unread,
              "promptID": s.promptID?.uuidString ?? NSNull(), "since": s.since.timeIntervalSince1970, "appID": s.appID,
@@ -374,6 +395,7 @@ enum E2E {
         return ["pid": Int(getpid()), "bundle": Bundle.main.bundleIdentifier ?? "", "home": home, "e2e": on, "ui": ui,
                 "arch": arch, "hookPort": Int(Prompts.port), "sessions": sessions, "prompts": prompts, "sources": sources,
                 "hooks": ["claude": HookInstaller.isInstalled(.claude), "codex": HookInstaller.isInstalled(.codex)],
+                "hookSetup": ["claude": HookSetup.shared.check(.claude).phase().rawValue, "codex": HookSetup.shared.check(.codex).phase().rawValue],
                 "panels": ["switcher": info("switcher"), "deck": info("deck"), "alert": info("alert")],
                 "whatsNew": WhatsNew.shared.showing ?? NSNull(),
                 "conflicts": Hotkeys.shared.conflicts.sorted(), "keys": Hotkeys.shared.heldNames, "opened": opened]
