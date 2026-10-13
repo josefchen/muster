@@ -24,6 +24,15 @@ struct Prompt {
     let created = Date()
     /// Native prompt waits for us; release when you look at the agent's app.
     let blocksNative: Bool
+    /// The rest of what the agent sent, for the alert's details (⌥↓).
+    var context = Context()
+
+    struct Context {
+        var reason = ""                 // the agent's own one-line explanation, when it gives one
+        var body = ""                   // the whole command, the edit's file and size, the plan, or the URL
+        var code = false                // body is a command, shown in monospace
+        var choices: [(label: String, note: String)] = []
+    }
 
     var headline: String {
         switch kind {
@@ -81,9 +90,13 @@ final class Prompts {
     func addDemoPrompt(_ agent: Agent = .claude) {
         let p = agent == .codex
             ? Prompt(agent: .codex, sessionID: "Port the parser to Rust", project: "/work/lexer",
-                     kind: .permission(tool: "Bash", summary: "cargo test --workspace", canAlwaysAllow: false), blocksNative: false)
+                     kind: .permission(tool: "Bash", summary: "cargo test --workspace", canAlwaysAllow: false), blocksNative: false,
+                     context: Prompt.Context(reason: "Run the whole test suite against the new Rust parser",
+                                             body: "cargo test --workspace", code: true))
             : Prompt(agent: .claude, sessionID: "Migrate auth to passkeys", project: "/work/atlas",
-                     kind: .permission(tool: "Bash", summary: "npm run migrate -- --env staging", canAlwaysAllow: true), blocksNative: false)
+                     kind: .permission(tool: "Bash", summary: "npm run migrate -- --env staging", canAlwaysAllow: true), blocksNative: false,
+                     context: Prompt.Context(reason: "Create the passkey tables in the staging database",
+                                             body: "npm run migrate -- --env staging", code: true))
         pending[p.id] = p
     }
 
@@ -221,24 +234,58 @@ final class Prompts {
         let input = d["tool_input"] as? [String: Any] ?? [:]
         let agent: Agent = path.hasPrefix("/codex") ? .codex : .claude
         if path.hasSuffix("/permission") {
-            let summary = (input["command"] as? String) ?? (input["file_path"] as? String) ?? (input["description"] as? String)
+            let command = (input["command"] as? String) ?? (input["command"] as? [String])?.joined(separator: " ")
+            let summary = command ?? (input["file_path"] as? String) ?? (input["description"] as? String)
                 ?? (input["url"] as? String) ?? tool
             let canAlways = !((d["permission_suggestions"] as? [Any])?.isEmpty ?? true)
             return Prompt(agent: agent, sessionID: sid, project: cwd, kind: .permission(tool: tool, summary: summary, canAlwaysAllow: canAlways),
-                          blocksNative: agent == .codex)
+                          blocksNative: agent == .codex, context: Self.context(tool, input, command, d))
         }
         if path.hasSuffix("/question") {
             if tool == "ExitPlanMode" {
-                return Prompt(agent: agent, sessionID: sid, project: cwd, kind: .plan(input["plan"] as? String ?? ""), blocksNative: true)
+                let plan = input["plan"] as? String ?? ""
+                return Prompt(agent: agent, sessionID: sid, project: cwd, kind: .plan(plan), blocksNative: true,
+                              context: Prompt.Context(body: plan))
             }
             // One question at a time; several questions in one call go to the native UI.
             guard let qs = input["questions"] as? [[String: Any]], qs.count == 1, let q = qs.first,
                   q["multiSelect"] as? Bool != true, let text = q["question"] as? String,
                   let options = (q["options"] as? [[String: Any]])?.compactMap({ $0["label"] as? String }), !options.isEmpty
             else { return nil }
-            return Prompt(agent: agent, sessionID: sid, project: cwd, kind: .question(text: text, options: Array(options.prefix(9))), blocksNative: true)
+            let notes = (q["options"] as? [[String: Any]] ?? []).map { $0["description"] as? String ?? "" }
+            let choices = options.prefix(9).enumerated().map { (label: $0.element, note: notes.indices.contains($0.offset) ? notes[$0.offset] : "") }
+            return Prompt(agent: agent, sessionID: sid, project: cwd, kind: .question(text: text, options: Array(options.prefix(9))), blocksNative: true,
+                          context: Prompt.Context(choices: choices))
         }
         return nil
+    }
+
+    /// Why the agent asks and what exactly it would do, from the request itself.
+    static func context(_ tool: String, _ input: [String: Any], _ command: String?, _ d: [String: Any]) -> Prompt.Context {
+        var c = Prompt.Context()
+        c.reason = (input["description"] as? String) ?? (input["justification"] as? String) ?? (d["reason"] as? String) ?? ""
+        let lines = { (key: String) in ((input[key] as? String) ?? "").split(separator: "\n", omittingEmptySubsequences: false).count }
+        let file = input["file_path"] as? String ?? ""
+        switch tool {
+        case "Edit":
+            c.body = "\(file)\nreplaces \(lines("old_string")) line\(lines("old_string") == 1 ? "" : "s") with \(lines("new_string"))"
+        case "MultiEdit":
+            let n = (input["edits"] as? [Any])?.count ?? 0
+            c.body = "\(file)\n\(n) edit\(n == 1 ? "" : "s")"
+        case "Write":
+            c.body = "\(file)\nwrites \(lines("content")) line\(lines("content") == 1 ? "" : "s")"
+        case "WebFetch":
+            c.body = [input["url"] as? String, input["prompt"] as? String].compactMap { $0 }.joined(separator: "\n")
+        default:
+            if let command {
+                c.body = command
+            } else {
+                c.body = input.keys.sorted().prefix(4).map { "\($0): \(String(describing: input[$0]!).prefix(160))" }.joined(separator: "\n")
+            }
+            c.code = true
+        }
+        if c.reason == command { c.reason = "" }
+        return c
     }
 }
 

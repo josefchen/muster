@@ -3,17 +3,24 @@ import AppKit
 /// A glass alert at the top of the screen while an agent waits on you. It never
 /// takes focus, answers with the same keys as the switcher, and stays until the
 /// wait ends or you dismiss it. Works whatever the notification settings, Focus
-/// mode or menu bar layout.
+/// mode or menu bar layout. ⌥↓ unfolds what the agent sent in full, so you can
+/// decide without switching; a click opens the session itself.
 final class Attention {
     static let width: CGFloat = 540
     static let changed = Notification.Name("dev.muster.app.attention")
+    /// Posted by e2e runs, with an NSNumber: true unfolds the details, false folds them.
+    static let peekRequest = Notification.Name("dev.muster.app.attention.peek")
     private static let inset: CGFloat = 6
+    private static let textX: CGFloat = 58            // where the row's title starts
+    private static var detailWidth: CGFloat { width - inset - textX - 22 }
 
     private let panel = GlassPanel(cornerRadius: 22, canBecomeKey: false)
     private let surface = AlertSurface()
     private let row = SessionRow(frame: .zero)
     private let tint = NSView()
     private let more = label(11, .medium, .tertiaryLabelColor)
+    private let details = NSTextField(wrappingLabelWithString: "")
+    private var expandedFor: String?                 // the waiting prompt whose details are open
     private var current: Session?
     private var dismissed: Set<String> = []
     private var keysOn = false
@@ -36,10 +43,28 @@ final class Attention {
         tint.layer?.borderWidth = 1
         tint.layer?.backgroundColor = Status.needsYou.colour.withAlphaComponent(0.14).cgColor
         tint.layer?.borderColor = Status.needsYou.colour.withAlphaComponent(0.45).cgColor
-        [tint, row, more].forEach(surface.addSubview)
+        details.identifier = NSUserInterfaceItemIdentifier("muster.details")
+        details.isSelectable = false
+        details.maximumNumberOfLines = 18
+        details.cell?.truncatesLastVisibleLine = true
+        details.isHidden = true
+        [tint, row, details, more].forEach(surface.addSubview)
         panel.content.addSubview(surface)
         Store.shared.observe { [weak self] _ in self?.update() }
         NotificationCenter.default.addObserver(forName: Self.changed, object: nil, queue: .main) { [weak self] _ in self?.update() }
+        NotificationCenter.default.addObserver(forName: Self.peekRequest, object: nil, queue: .main) { [weak self] n in
+            self?.peek((n.object as? NSNumber)?.boolValue ?? true)
+        }
+    }
+
+    /// ⌥↓ unfolds what the agent sent, ⌥↑ folds it away. False when the alert has nothing
+    /// to unfold or is already that way, so the keys keep moving through the switcher.
+    @discardableResult
+    func peek(_ open: Bool) -> Bool {
+        guard shown, let s = current, s.promptID != nil, open != (expandedFor == key(s)) else { return false }
+        expandedFor = open ? key(s) : nil
+        update()
+        return true
     }
 
     func answer(_ a: Answer) {
@@ -56,24 +81,77 @@ final class Attention {
         guard Self.enabled, let first = pending.first else { return hide() }
         current = first
         row.show(first, now: Date())
+        let prompt = first.promptID.flatMap { Prompts.shared.pending[$0] }
+        if expandedFor != nil, expandedFor != key(first) { expandedFor = nil }   // a new prompt starts folded
+        let open = prompt != nil && expandedFor == key(first)
         let extra = pending.count - 1
-        set(more, extra > 0 ? "\(extra) more waiting   ·   \(Hotkeys.shared.switcher.display) to see all" : "")
-        more.isHidden = extra == 0
+        let m = Hotkeys.shared.switcher.symbols.replacingOccurrences(of: "⇧", with: "")
+        let hints = [extra > 0 ? "\(extra) more waiting" : nil, extra > 0 ? "\(Hotkeys.shared.switcher.display) to see all" : nil,
+                     prompt == nil ? nil : open ? "\(m)↑ Less" : "\(m)↓ Details"].compactMap { $0 }
+        set(more, hints.joined(separator: "   ·   "))
+        more.isHidden = hints.isEmpty
+        var detailHeight: CGFloat = 0
+        if open, let prompt {
+            details.attributedStringValue = Self.details(prompt)
+            detailHeight = min(320, ceil(details.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: Self.detailWidth, height: 10_000)).height ?? 0))
+        }
+        details.isHidden = detailHeight == 0
+        surface.setAccessibilityValue(details.isHidden ? nil : details.stringValue)
         setKeys(first.promptID != nil)
-        show(height: SessionRow.height + Self.inset * 2 + (extra > 0 ? 20 : 0))
+        show(height: SessionRow.height + Self.inset * 2 + (detailHeight > 0 ? detailHeight + 14 : 0) + (hints.isEmpty ? 0 : 20),
+             details: detailHeight)
     }
 
-    private func show(height: CGFloat) {
+    /// Why the agent asks, exactly what it would do, the choices with their notes, and where.
+    private static func details(_ p: Prompt) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = 1.5
+        para.paragraphSpacing = 5
+        func line(_ parts: [(String, NSFont, NSColor)]) {
+            if out.length > 0 { out.append(NSAttributedString(string: "\n")) }
+            for (text, font, colour) in parts {
+                out.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: colour, .paragraphStyle: para]))
+            }
+        }
+        let c = p.context
+        if !c.reason.isEmpty { line([(c.reason, .systemFont(ofSize: 12.5, weight: .medium), .labelColor)]) }
+        // The row already shows a short, one-line command whole; repeat only what it has to cut.
+        var shownInRow = false
+        if case .permission(_, let summary, _) = p.kind { shownInRow = summary == c.body && c.body.count <= 46 && !c.body.contains("\n") }
+        if !c.body.isEmpty, !shownInRow {
+            let lines = c.body.split(separator: "\n", omittingEmptySubsequences: false)
+            let text = lines.prefix(12).joined(separator: "\n") + (lines.count > 12 ? "\n…" : "")
+            line([(text, c.code ? .monospacedSystemFont(ofSize: 11.5, weight: .regular) : .systemFont(ofSize: 12), .secondaryLabelColor)])
+        }
+        for (i, choice) in c.choices.enumerated() {
+            line([("\(i + 1)   ", .monospacedDigitSystemFont(ofSize: 12, weight: .semibold), .tertiaryLabelColor),
+                  (choice.label, .systemFont(ofSize: 12.5, weight: .medium), .labelColor),
+                  (choice.note.isEmpty ? "" : "   " + choice.note, .systemFont(ofSize: 12), .secondaryLabelColor)])
+        }
+        if !p.project.isEmpty {
+            let folder = p.project.hasPrefix(home) ? "~" + p.project.dropFirst(home.count) : p.project
+            line([("in " + folder, .systemFont(ofSize: 11), .tertiaryLabelColor)])
+        }
+        return out
+    }
+
+    private func show(height: CGFloat, details detailHeight: CGFloat) {
         let size = NSSize(width: Self.width, height: height)
         row.frame = NSRect(x: Self.inset, y: Self.inset, width: size.width - Self.inset * 2, height: SessionRow.height)
-        tint.frame = row.frame
-        more.frame = NSRect(x: 0, y: Self.inset + SessionRow.height + 1, width: size.width, height: 14)
+        details.frame = NSRect(x: Self.inset + Self.textX, y: Self.inset + SessionRow.height + 2, width: Self.detailWidth, height: detailHeight)
+        tint.frame = detailHeight > 0 ? row.frame.union(details.frame.insetBy(dx: 0, dy: -8)) : row.frame
+        more.frame = NSRect(x: 0, y: tint.frame.maxY + 1, width: size.width, height: 14)
         surface.closeFrame = NSRect(x: 4, y: 4, width: 18, height: 18)
         if shown {
             var f = panel.frame
             f.origin.y += f.height - height
             f.size = size
-            panel.setFrame(f, display: true)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
+                panel.animator().setFrame(f, display: true)
+            }
             panel.invalidateShadow()
             return
         }

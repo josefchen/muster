@@ -11,6 +11,12 @@ enum Demo {
     private static var caps: KeyCaps?
 
     static func play(answer: @escaping (Answer) -> Void) {
+        // `--peek` (with `--attention`): the alert opens with its details unfolded, for screenshots.
+        if Store.demo, CommandLine.arguments.contains("--peek") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                NotificationCenter.default.post(name: Attention.peekRequest, object: NSNumber(value: true))
+            }
+        }
         guard autoplay else { return }
         let keys = KeyCaps(["⌥", "↩"])
         caps = keys

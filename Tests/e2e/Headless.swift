@@ -375,6 +375,12 @@ final class Headless {
         req = claudeHook(questionURL, h.preToolUsePayload(tool: "AskUserQuestion", input: questions))
         p = held("claude", h.sid, "question", "AskUserQuestion is held as a question")
         check((p?["options"] as? [String]) == ["Postgres", "SQLite", "Redis"] && p?["blocksNative"] as? Bool == true, "…with its three options")
+        expect(app, "…shown in the alert") { $0.visible("alert") && $0.alertSession == h.id }
+        app.act("peek", ["open": true])
+        expect(app, "⌥↓ lists every option with its note") { s in
+            let d = s.panel("alert")["details"] as? String ?? ""
+            return ["1", "Postgres", "Reuse the main database.", "2", "SQLite", "A file next to the app.", "Redis"].allSatisfy(d.contains)
+        }
         answer(p, "option", option: 1)
         reply(req, "choosing option 2 allows the tool with the answer filled in", Expect.answered(questions, "Which database should the cache use?", "SQLite"))
 
@@ -437,6 +443,14 @@ final class Headless {
         req = claudeHook(permissionURL, perm)
         p = held("claude", h.sid, "permission", "a request for the answer keys")
         expect(app, "…shown in the alert") { $0.visible("alert") && $0.alertSession == h.id }
+        check(app.state()?.panel("alert")["details"] is NSNull, "…folded, with the details out of the way")
+        app.act("peek", ["open": true])
+        expect(app, "⌥↓ unfolds the agent's reason and the folder, without repeating a command the row shows whole") { s in
+            let d = s.panel("alert")["details"] as? String ?? ""
+            return d.contains("Run the migrations") && d.contains("hooks") && !d.contains("npm run migrate")
+        }
+        app.act("peek", ["open": false])
+        expect(app, "⌥↑ folds them again") { $0.panel("alert")["details"] is NSNull }
         app.act("answer", ["answer": "allow"])
         reply(req, "⌥↩ with the alert up allows it", Expect.allow)
 

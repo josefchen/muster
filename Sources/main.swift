@@ -364,8 +364,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Hotkeys.shared.install { [weak self] action in
             guard let self else { return }
             switch action {
-            case .next, .down: self.switcher.step(1)
-            case .previous, .up: self.switcher.step(-1)
+            case .next: self.switcher.step(1)
+            case .previous: self.switcher.step(-1)
+            // With an alert up and the switcher closed, the arrows unfold and fold its details.
+            case .down: if self.switcher.isOpen || !self.attention.peek(true) { self.switcher.step(1) }
+            case .up: if self.switcher.isOpen || !self.attention.peek(false) { self.switcher.step(-1) }
             case .cancel: self.switcher.cancel()
             case .search: self.deck.toggle(below: nil)
             }

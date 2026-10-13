@@ -308,6 +308,8 @@ enum E2E {
                                              timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: p.windowNumber, context: nil,
                                              eventNumber: 0, clickCount: 1, pressure: 1) else { return "bad click" }
             surface.mouseDown(with: e)
+        case "peek":
+            NotificationCenter.default.post(name: Attention.peekRequest, object: NSNumber(value: d["open"] as? Bool ?? true))
         case "front":
             front = (d["agent"] as? String).flatMap(Agent.init(rawValue:))
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: NSWorkspace.shared,
@@ -390,6 +392,9 @@ enum E2E {
             d["session"] = row.session?.id ?? NSNull()
         }
         if let field = find(NSTextField.self, in: p.content, where: \.isEditable) { d["query"] = field.stringValue }
+        if let more = find(NSTextField.self, in: p.content, where: { $0.identifier?.rawValue == "muster.details" }) {
+            d["details"] = more.isHidden ? NSNull() : more.stringValue
+        }
         return d
     }
 
