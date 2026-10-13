@@ -44,3 +44,23 @@ jobs:
           name: e2e
       - name: End-to-end
         run: tar -xzf e2e.tgz && scripts/e2e.sh --prebuilt dist
+      # The suite runs headless; these show what the panels look like on this Mac.
+      - name: Screenshots
+        if: always()
+        run: |
+          app=dist/MusterE2E.app/Contents/MacOS/MusterE2E
+          mkdir -p shots
+          shot() { name=$1; shift; "$app" "$@" >/dev/null 2>&1 & pid=$!; sleep 5; screencapture -x "shots/$name.png" || true; kill $pid; sleep 1; }
+          for look in dark light; do
+            flag=""; [ "$look" = light ] && flag=--light
+            shot "alert-$look" --demo --backdrop --attention --question --peek $flag
+            shot "switcher-$look" --demo --backdrop --switcher $flag
+            shot "tour-$look" --demo --backdrop --welcome --step 3 -launched NO $flag
+          done
+          ls -la shots
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: shots-${{ matrix.os }}
+          path: shots
+          retention-days: 3
