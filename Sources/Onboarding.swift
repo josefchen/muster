@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
 import UserNotifications
@@ -139,13 +140,20 @@ final class OnboardingModel: ObservableObject {
     }
 
     func restart() {
-        step = .hello
+        step = Self.demoStep ?? .hello
         forward = true
         reachedEnd = false
         triedSwitcher = false
         triedSearch = false
         openAtLogin = true
     }
+
+    /// `--demo --step 3` opens the tour on that page (0 is hello), for screenshots.
+    private static let demoStep: Step? = {
+        let args = CommandLine.arguments
+        guard Store.demo, let i = args.firstIndex(of: "--step"), i + 1 < args.count, let n = Int(args[i + 1]) else { return nil }
+        return Step(rawValue: n)
+    }()
 
     func next() {
         guard position + 1 < steps.count else { finish?(); return }
@@ -535,7 +543,7 @@ private struct AnswerPage: View {
         VStack(spacing: 22) {
             Spacer(minLength: 24)
             Header(title: "Answer without switching",
-                   subtitle: "When an agent asks to run something, reply from Muster or right from the notification.")
+                   subtitle: "When an agent asks, an alert at the top of your screen shows the keys that answer it. Try them on this one.")
             PromptPreview()
             Card {
                 ForEach(Array(model.answerable.enumerated()), id: \.element) { i, agent in
@@ -607,29 +615,111 @@ private struct AnswerPage: View {
     }
 }
 
+/// The alert as it looks with a prompt, keys along the bottom, and it answers to them: press
+/// ⌥↓ and it unfolds, ⌥↩ or ⌥⌫ and it shows what the agent would hear.
 private struct PromptPreview: View {
+    private let m = Hotkeys.shared.switcher.symbols.replacingOccurrences(of: "⇧", with: "")
+    @State private var open = false
+    @State private var answer: String?
+    @State private var monitor: Any?
+
     var body: some View {
-        HStack(spacing: 12) {
-            if let icon = Agent.claude.icon { Image(nsImage: icon).resizable().frame(width: 30, height: 30) }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Claude · Wants to run").font(.system(size: 13, weight: .semibold))
-                Text("npm test").font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+        VStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                if let icon = Agent.claude.icon { Image(nsImage: icon).resizable().frame(width: 30, height: 30).padding(.top, 2) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Add rate limiting").font(.system(size: 13, weight: .semibold))
+                    HStack(spacing: 5) {
+                        Text("Wants to run").foregroundStyle(.secondary)
+                        Text("npm test").font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                    }
+                    .font(.system(size: 12))
+                    if open {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Run the tests before committing the limiter").font(.system(size: 12, weight: .medium))
+                            Text("in ~/work/api").font(.system(size: 11)).foregroundStyle(.tertiary)
+                        }
+                        .padding(.top, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                Spacer()
+                HStack(spacing: 5) {
+                    Circle().fill(answer == nil ? Color.orange : .secondary).frame(width: 7, height: 7)
+                    Text(answer == nil ? "Needs you" : "Working").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(answer == nil ? Color.orange : .secondary)
+                }
             }
-            Spacer()
-            HStack(spacing: 6) {
-                Text("Allow").padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(Color.accentColor, in: Capsule()).foregroundStyle(.white)
-                Text("Deny").padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(.quaternary, in: Capsule())
+            Group {
+                if let answer {
+                    Label(answer, systemImage: answer == "Allowed" ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(answer == "Allowed" ? Color.green : .secondary)
+                } else {
+                    HStack(spacing: 18) {
+                        KeyHintView(keys: [m + "↩"], action: "Allow")
+                        KeyHintView(keys: [m + "⌫"], action: "Deny")
+                        KeyHintView(keys: [m + (open ? "↑" : "↓")], action: open ? "Less" : "Details")
+                    }
+                }
             }
-            .font(.system(size: 12, weight: .semibold))
+            .frame(height: 20)
         }
-        .padding(14)
-        .frame(width: 400)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
+        .frame(width: 420)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color.orange.opacity(answer == nil ? 0.1 : 0), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .shadow(color: .black.opacity(0.15), radius: 14, y: 6)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: open)
+        .animation(.easeOut(duration: 0.2), value: answer)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Example: Claude wants to run npm test, with Allow and Deny buttons")
+        .accessibilityLabel("Example alert: Claude wants to run npm test. Try \(m)Return to allow, \(m)Delete to deny, \(m)Down Arrow for the details.")
+        .onAppear(perform: listen)
+        .onDisappear { if let monitor { NSEvent.removeMonitor(monitor) }; monitor = nil }
+    }
+
+    /// The tour window has focus, so its own key events will do; nothing global.
+    private func listen() {
+        guard monitor == nil else { return }
+        let modifiers = Hotkeys.shared.switcher.flags.subtracting(.shift)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            guard e.modifierFlags.intersection([.control, .option, .command]) == modifiers else { return e }
+            switch Int(e.keyCode) {
+            case kVK_Return: settle("Allowed")
+            case kVK_Delete: settle("Denied")
+            case kVK_DownArrow: if answer == nil { open = true }
+            case kVK_UpArrow: open = false
+            default: return e
+            }
+            return nil
+        }
+    }
+
+    private func settle(_ what: String) {
+        guard answer == nil else { return }
+        answer = what
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) { answer = nil; open = false }
+    }
+}
+
+/// A key as a keycap, then what it does: the same look as the alert's key line.
+struct KeyHintView: View {
+    let keys: [String]
+    let action: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(keys, id: \.self) { key in
+                Text(key)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 5)
+                    .frame(minWidth: 22, minHeight: 18)
+                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 4.5, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 4.5, style: .continuous).strokeBorder(Color.primary.opacity(0.15)))
+            }
+            Text(action).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+        }
     }
 }
 
