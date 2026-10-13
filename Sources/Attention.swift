@@ -27,6 +27,7 @@ final class Attention {
     private var typingWatch: Timer?
     private var typing = false
     private var shownHints: ([KeyHint], Bool)?
+    private var answeringChecked: [Agent: (Date, Bool)] = [:]
 
     static var enabled: Bool {
         get { !UserDefaults.standard.bool(forKey: "mute.alert") && (!Store.demo || CommandLine.arguments.contains("--attention")) }
@@ -90,7 +91,7 @@ final class Attention {
         if expandedFor != nil, expandedFor != key(first) { expandedFor = nil }   // a new prompt starts folded
         let open = prompt != nil && expandedFor == key(first)
         row.show(first, now: Date(), unfolded: open, trailing: false)
-        let hints = Self.hints(prompt, open: open, more: pending.count - 1)
+        let hints = Self.hints(prompt, open: open, more: pending.count - 1, offerAnswering: prompt == nil && !answering(first.agent))
         let dark = surface.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if hints != shownHints?.0 || dark != shownHints?.1 {
             shownHints = (hints, dark)
@@ -109,7 +110,7 @@ final class Attention {
     }
 
     /// Every alert says which keys act on it, so nobody has to know them beforehand.
-    private static func hints(_ p: Prompt?, open: Bool, more extra: Int) -> [KeyHint] {
+    private static func hints(_ p: Prompt?, open: Bool, more extra: Int, offerAnswering: Bool) -> [KeyHint] {
         let m = Hotkeys.shared.switcher.symbols.replacingOccurrences(of: "⇧", with: "")
         let fold = KeyHint([m + (open ? "↑" : "↓")], open ? "Less" : "Details")
         var hints: [KeyHint]
@@ -119,7 +120,9 @@ final class Attention {
             let last = min(9, options.count)
             hints = [KeyHint(last > 1 ? [m + "1", "–", m + "\(last)"] : [m + "1"], "Choose"), KeyHint([m + (open ? "↑" : "↓")], open ? "Less" : "Options")]
         case .plan?: hints = [KeyHint([m + "↩"], "Approve"), KeyHint([m + "⌫"], "Keep planning"), KeyHint([m + (open ? "↑" : "↓")], open ? "Less" : "Plan")]
-        case nil: hints = [KeyHint([Hotkeys.shared.switcher.display], "Go to it")]
+        case nil:
+            hints = [KeyHint([Hotkeys.shared.switcher.display], "Go to it")]
+            if offerAnswering { hints.append(KeyHint([], "Reply from here: turn it on in Settings")) }
         }
         if extra > 0 { hints.append(KeyHint(p == nil ? [] : [Hotkeys.shared.switcher.display], "\(extra) more waiting")) }
         return hints
@@ -207,6 +210,16 @@ final class Attention {
             guard let self, !self.shown else { return }
             self.panel.orderOut(nil)
         }
+    }
+
+    /// Whether Muster can answer this agent's prompts. Cursor never; Claude Code and Codex once
+    /// their hook is on. Read from their settings at most every few seconds.
+    private func answering(_ agent: Agent) -> Bool {
+        guard agent != .cursor else { return true }   // nothing to turn on, so nothing to offer
+        if let (at, on) = answeringChecked[agent], Date().timeIntervalSince(at) < 5 { return on }
+        let on = HookInstaller.isInstalled(agent)
+        answeringChecked[agent] = (Date(), on)
+        return on
     }
 
     /// The prompt's keys, held while it shows, except while you type elsewhere: then ⌥↩ for a

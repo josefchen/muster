@@ -326,11 +326,12 @@ final class SessionList: Flipped {
     func select(_ index: Int, animated: Bool) {
         guard !items.isEmpty else { highlight.isHidden = true; return }
         selected = max(0, min(index, items.count - 1))
-        let s = items[selected]
         highlight.isHidden = false
-        // A plain fill, as Mac lists select; warm only when the row is waiting on you.
-        let fill = s.status == .needsYou ? Status.needsYou.colour.withAlphaComponent(0.18) : NSColor.labelColor.withAlphaComponent(0.08)
-        effectiveAppearance.performAsCurrentDrawingAppearance { highlight.layer?.backgroundColor = fill.cgColor }
+        // A plain fill, as Mac lists select. The row's own orange says when it waits on you;
+        // an orange wash over the glass only turns muddy.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            highlight.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.09).cgColor
+        }
         let target = rowFrames[selected]
         if animated, highlight.frame != .zero, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { ctx in

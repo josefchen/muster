@@ -27,7 +27,6 @@ final class Switcher {
 
     init() {
         hint.alignment = .center
-        hint.stringValue = Self.hintText
         empty.alignment = .center
         empty.stringValue = "No agents running"
         panel.acceptsMouseMovedEvents = true
@@ -38,9 +37,10 @@ final class Switcher {
         list.updateTrackingAreas()
     }
 
-    static var hintText: String {
+    /// The keys that work while it's open, drawn as keys.
+    static var hints: [KeyHint] {
         let s = Hotkeys.shared.switcher
-        return "\(s.key) next   ·   ⇧\(s.key) back   ·   click or release to open   ·   Esc cancel"
+        return [KeyHint([s.symbols], "Let go to open"), KeyHint([s.key], "Next"), KeyHint(["⇧" + s.key], "Back"), KeyHint(["Esc"], "Cancel")]
     }
 
     func step(_ delta: Int) {
@@ -64,7 +64,7 @@ final class Switcher {
     private func begin() {
         active = true
         Hotkeys.shared.hold(.all, owner: "switcher")
-        hint.stringValue = Self.hintText
+        hint.attributedStringValue = keyHints(Self.hints, appearance: panel.content.effectiveAppearance)
         snapshot = Self.pick(Store.shared.sessions)
         if practice && snapshot.isEmpty { snapshot = Self.pick(Session.samples) }
         layout()
@@ -89,7 +89,7 @@ final class Switcher {
         let top = area.maxY - area.height * 0.18
         panel.setFrame(NSRect(x: area.midX - size.width / 2, y: top - size.height, width: size.width, height: size.height), display: false)
         list.frame = NSRect(x: 0, y: 0, width: size.width, height: listHeight)
-        hint.frame = NSRect(x: 0, y: size.height - 26, width: size.width, height: 14)
+        hint.frame = NSRect(x: 0, y: size.height - 29, width: size.width, height: 19)
         empty.frame = NSRect(x: 0, y: 22, width: size.width, height: 20)
         empty.isHidden = !snapshot.isEmpty
         list.isHidden = snapshot.isEmpty

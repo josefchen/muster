@@ -280,6 +280,10 @@ final class Headless {
         c.append(c.toolUse("Bash", input: ["command": "make lint"]), c.toolResult("clean"), c.ask())
         expect(app, "Claude: AskUserQuestion reads as needs you") { $0.status(c.id) == "needsYou" }
         expect(app, "…and the alert shows it") { $0.visible("alert") && $0.alertSession == c.id }
+        expect(app, "…with ⌥Tab to go to it, and where to turn on answering when that's off") { s in
+            let on = (s.raw["hooks"] as? [String: Bool])?["claude"] == true
+            return s.alertHints == (on ? "⌥Tab Go to it" : "⌥Tab Go to it, Reply from here: turn it on in Settings")
+        }
         c.append(c.toolResult("SQLite"), c.reply("Switched the cache to SQLite."))
         expect(app, "Claude: the finished turn reads as done, unread") { $0.status(c.id) == "done" && $0.unread(c.id) == true }
         expect(app, "…and the alert goes away") { !$0.visible("alert") }
