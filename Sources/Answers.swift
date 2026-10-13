@@ -77,10 +77,13 @@ final class Prompts {
         return t
     }()
 
-    /// A sample prompt on the first sample session, for `--demo` screenshots.
-    func addDemoPrompt() {
-        let p = Prompt(agent: .claude, sessionID: "Migrate auth to passkeys", project: "/work/atlas",
-                       kind: .permission(tool: "Bash", summary: "npm run migrate -- --env staging", canAlwaysAllow: true), blocksNative: false)
+    /// A sample prompt on a sample session, for `--demo` screenshots and recordings.
+    func addDemoPrompt(_ agent: Agent = .claude) {
+        let p = agent == .codex
+            ? Prompt(agent: .codex, sessionID: "Port the parser to Rust", project: "/work/lexer",
+                     kind: .permission(tool: "Bash", summary: "cargo test --workspace", canAlwaysAllow: false), blocksNative: false)
+            : Prompt(agent: .claude, sessionID: "Migrate auth to passkeys", project: "/work/atlas",
+                     kind: .permission(tool: "Bash", summary: "npm run migrate -- --env staging", canAlwaysAllow: true), blocksNative: false)
         pending[p.id] = p
     }
 

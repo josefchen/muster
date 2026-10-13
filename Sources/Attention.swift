@@ -78,7 +78,7 @@ final class Attention {
             return
         }
         shown = true
-        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        let screen = Store.demo ? NSScreen.screens.first : NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         let final = NSRect(x: area.midX - size.width / 2, y: area.maxY - size.height - 8, width: size.width, height: size.height)
         let still = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
