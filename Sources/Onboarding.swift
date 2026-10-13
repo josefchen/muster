@@ -735,12 +735,46 @@ enum Installer {
     /// Per bundle id, so a test build (dev.muster.e2e) never answers the real app's hand-off.
     static let reopen = Notification.Name((Bundle.main.bundleIdentifier ?? "dev.muster.app") + ".reopen")
 
-    /// Another Muster is already running: hand over to it and quit.
+    /// Another Muster is already running: hand over to it and quit. Unless it started before
+    /// this copy was installed, which means it's the version this one replaces (a drag-and-drop
+    /// update, `brew upgrade`, or a move from the disk image): then it quits and this one stays.
     static func handOffIfRunning() -> Bool {
-        guard let id = Bundle.main.bundleIdentifier,
-              NSRunningApplication.runningApplications(withBundleIdentifier: id).contains(where: { $0 != .current }) else { return false }
+        guard let id = Bundle.main.bundleIdentifier else { return false }
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: id).filter { $0 != .current }
+        guard !others.isEmpty else { return false }
+        let installed = installedAt()
+        if others.allSatisfy({ ($0.launchDate ?? .distantPast) < installed }) {
+            others.forEach { $0.terminate() }
+            let deadline = Date().addingTimeInterval(3)
+            while others.contains(where: { !$0.isTerminated }), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
+            others.filter { !$0.isTerminated }.forEach { $0.forceTerminate() }
+            return false
+        }
         DistributedNotificationCenter.default().postNotificationName(reopen, object: nil, userInfo: nil, deliverImmediately: true)
         return true
+    }
+
+    /// When this copy's executable arrived at its path. Copying, Finder's replace and Homebrew
+    /// all create a new file, which sets its status-change time even when they keep the old
+    /// modification time.
+    private static func installedAt() -> Date {
+        guard let exe = Bundle.main.executablePath else { return .distantPast }
+        var st = Darwin.stat()
+        guard stat(exe, &st) == 0 else { return .distantPast }
+        return Date(timeIntervalSince1970: TimeInterval(st.st_ctimespec.tv_sec) + TimeInterval(st.st_ctimespec.tv_nsec) / 1e9)
+    }
+
+    /// The disk image this copy came from, so it can be ejected once Muster is installed.
+    private static func diskImage(of path: String) -> String? {
+        let parts = URL(fileURLWithPath: path).pathComponents
+        if parts.count > 2, parts[1] == "Volumes" { return "/Volumes/" + parts[2] }
+        // A translocated copy hides its volume: look for a mounted Muster with the same id.
+        let fm = FileManager.default
+        for volume in (try? fm.contentsOfDirectory(atPath: "/Volumes")) ?? [] {
+            let app = "/Volumes/\(volume)/Muster.app"
+            if Bundle(path: app)?.bundleIdentifier == Bundle.main.bundleIdentifier { return "/Volumes/" + volume }
+        }
+        return nil
     }
 
     /// Running from the disk image, a translocated copy or Downloads: offer to move to Applications.
@@ -776,9 +810,12 @@ enum Installer {
         }
         if !translocated && !mounted { try? fm.trashItem(at: URL(fileURLWithPath: path), resultingItemURL: nil) }
 
+        // Once this copy quits: open the installed one, and eject the disk image it came from.
         let relaunch = Process()
         relaunch.executableURL = URL(fileURLWithPath: "/bin/sh")
-        relaunch.arguments = ["-c", "while /bin/kill -0 \(getpid()) 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open \"$0\"", dest.path]
+        relaunch.arguments = ["-c", "while /bin/kill -0 \(getpid()) 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open \"$0\"; " +
+                              "if [ -n \"$1\" ]; then /bin/sleep 1; /usr/bin/hdiutil detach -quiet \"$1\"; fi",
+                              dest.path, (translocated || mounted) ? diskImage(of: path) ?? "" : ""]
         try? relaunch.run()
         return true
     }
