@@ -2,6 +2,15 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
+## 1.2.1 · 2026-10-13
+
+Installing and updating are smoother.
+
+- <!-- arrow.down.app --> **An installer window that shows the way.** Open the disk image and Muster sits next to your Applications folder, with an arrow between them.
+- <!-- arrow.triangle.2.circlepath --> **Updates take over cleanly.** Put a new Muster in place of the old one and open it: the old copy quits instead of staying in charge.
+- <!-- eject --> **The disk image ejects itself.** When Muster moves itself into Applications, it ejects the disk image it came from.
+- <!-- text.badge.plus --> **Nothing skipped.** If you jump past a release, What's New shows its changes too.
+
 ## 1.2.0 · 2026-10-13
 
 Only the errors you can fix ask for you.
