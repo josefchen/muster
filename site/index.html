@@ -191,8 +191,8 @@
   .js .reveal { opacity: 0; transform: translateY(20px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
   .js .reveal.in { opacity: 1; transform: none; }
 
-  /* The hero: two agents ask, Muster's alert brings each question to the editor you're in, and
-     two presses of ⌥↩ answer both. Laid out on a 900 × 540 desk that scales with the page
+  /* The hero: two agents ask, Muster's alert brings each question to the editor you're in (the
+     newest first, as the app does), and two presses of ⌥↩ answer both. Laid out on a 900 × 540 desk that scales with the page
      (1cqw = 9px at full size), all on one 10 s timeline. */
   .scene { container-type: inline-size; max-width: 900px; margin: 56px auto 0; }
   .desk { position: relative; aspect-ratio: 900 / 540; border-radius: 2.2cqw; overflow: hidden; text-align: left;
@@ -267,7 +267,7 @@
   .keys { position: absolute; left: 50%; bottom: 6%; z-index: 4; display: flex; gap: 1cqw; transform: translateX(-50%); opacity: 0; animation: keys 10s infinite; }
   .keys .cap { min-width: 5.4cqw; height: 5.4cqw; padding: 0 1.4cqw; border-radius: 1.2cqw; font-size: 2.4cqw; animation: press 10s infinite; }
 
-  /* 8% Claude asks · 15% Codex asks · 31% ⌥↩ answers Claude · 51% ⌥↩ answers Codex · 96% start over. */
+  /* 8% Claude asks · 15% Codex asks and shows first · 31% ⌥↩ answers Codex · 51% ⌥↩ answers Claude · 96% start over. */
   @keyframes one { 0%, 7% { opacity: 0; } 8%, 14% { opacity: 1; } 15%, 32% { opacity: 0; } 33%, 53% { opacity: 1; } 55%, 100% { opacity: 0; } }
   @keyframes two { 0%, 14% { opacity: 0; } 15%, 32% { opacity: 1; } 33%, 100% { opacity: 0; } }
   @keyframes ping {
@@ -276,8 +276,8 @@
     52% { opacity: 1; transform: translateY(0); }
     57%, 100% { opacity: 0; transform: translateY(-140%); }
   }
-  @keyframes first { 0%, 31.5% { opacity: 1; transform: none; } 33.5%, 100% { opacity: 0; transform: translateY(-.6cqw); } }
-  @keyframes second { 0%, 31.5% { opacity: 0; transform: translateY(.6cqw); } 33.5%, 100% { opacity: 1; transform: none; } }
+  @keyframes first { 0%, 14% { opacity: 1; transform: none; } 15.5%, 31% { opacity: 0; transform: translateY(.6cqw); } 32.5%, 100% { opacity: 1; transform: none; } }
+  @keyframes second { 0%, 14% { opacity: 0; transform: translateY(-.6cqw); } 15.5%, 31% { opacity: 1; transform: none; } 32.5%, 100% { opacity: 0; transform: translateY(-.6cqw); } }
   @keyframes more { 0%, 14% { height: 0; opacity: 0; } 16%, 31% { height: 2.3cqw; opacity: 1; } 33%, 100% { height: 0; opacity: 0; } }
   @keyframes keys { 0%, 21% { opacity: 0; transform: translate(-50%, 1.5cqw); } 25%, 54% { opacity: 1; transform: translate(-50%, 0); } 59%, 100% { opacity: 0; transform: translate(-50%, 0); } }
   @keyframes press {
@@ -286,14 +286,14 @@
     52.5%, 100% { transform: none; filter: none; }
   }
   @keyframes work { 0%, 7% { opacity: 1; } 8%, 96% { opacity: 0; } 100% { opacity: 1; } }
-  @keyframes ask { 0%, 7% { opacity: 0; } 8%, 31.5% { opacity: 1; } 32.5%, 100% { opacity: 0; } }
-  @keyframes done { 0%, 32% { opacity: 0; } 34%, 94% { opacity: 1; } 97%, 100% { opacity: 0; } }
-  @keyframes bashdot { 0%, 32% { color: #ff9f0a; } 34%, 96% { color: #3fca6b; } 100% { color: #ff9f0a; } }
+  @keyframes ask { 0%, 7% { opacity: 0; } 8%, 51.5% { opacity: 1; } 52.5%, 100% { opacity: 0; } }
+  @keyframes done { 0%, 52% { opacity: 0; } 54%, 94% { opacity: 1; } 97%, 100% { opacity: 0; } }
+  @keyframes bashdot { 0%, 52% { color: #ff9f0a; } 54%, 96% { color: #3fca6b; } 100% { color: #ff9f0a; } }
   @keyframes caret { 50% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .menubar .count .two, .ping, .keys, .term .ask, .ping .more, .ping .row.first { animation: none; opacity: 1; }
+    .menubar .count .two, .ping, .keys, .term .ask, .ping .more, .ping .row.second { animation: none; opacity: 1; }
     .ping .more { height: 2.3cqw; }
-    .menubar .count .one, .ping .row.second, .term .work, .term .done { animation: none; opacity: 0; }
+    .menubar .count .one, .ping .row.first, .term .work, .term .done { animation: none; opacity: 0; }
     .ping { transform: none; }
     .keys { transform: translateX(-50%); }
     .keys .cap, .code p.caret::after, .term .bashdot { animation: none; }
