@@ -19,11 +19,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/media/answer-dark.gif">
-    <img src="docs/media/answer-light.gif" width="760" alt="Claude Code and then Codex ask to run a command. Muster's alert shows the newest first with one more waiting, and ⌥↩ answers each in turn.">
+    <img src="docs/media/answer-light.gif" width="760" alt="Claude Code and then Codex ask to run a command. Muster's alert shows the newest first with its keys along the bottom; ⌥↓ unfolds why Codex asks, and ⌥↩ answers each in turn.">
   </picture>
 </p>
 
-<p align="center"><sub>Two agents ask. Two presses of <kbd>⌥</kbd><kbd>↩</kbd>, and you never left what you were doing. Recorded from the app.</sub></p>
+<p align="center"><sub>Two agents ask. <kbd>⌥</kbd><kbd>↓</kbd> shows why, two presses of <kbd>⌥</kbd><kbd>↩</kbd> answer them, and you never left what you were doing. Recorded from the app.</sub></p>
 
 If you run a few coding agents at once, the slow part isn't the agents. It's noticing which one has been waiting on you for ten minutes. Muster sits in the menu bar, tells you the moment one needs you, and lets you answer without switching apps.
 
@@ -39,7 +39,21 @@ A glass alert at the top of the screen the moment an agent waits on you. It stay
 <td width="50%" valign="top">
 
 **Answer from anywhere.**<br>
-Allow a command or pick an answer with <kbd>⌥</kbd><kbd>↩</kbd>, or right from the notification.
+Allow a command or pick an answer with <kbd>⌥</kbd><kbd>↩</kbd>, or right from the notification. The alert shows its keys.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+**See why before you answer.**<br>
+<kbd>⌥</kbd><kbd>↓</kbd> unfolds the agent's reason, the whole command, or every option with its note.
+
+</td>
+<td valign="top">
+
+**Your keys stay yours.**<br>
+Muster takes its keys only while something on screen needs them, and lets go while you type elsewhere.
 
 </td>
 </tr>
@@ -58,6 +72,13 @@ Most urgent first. Let go to land in its window, or the terminal it runs in.
 </td>
 </tr>
 </table>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/peek-dark.jpg">
+    <img src="docs/media/peek-light.jpg" width="640" alt="The alert unfolded with ⌥↓ on a question from Claude Code: three options, each with the agent's note, answered with ⌥1 to ⌥3">
+  </picture>
+</p>
 
 <p align="center">
   <img src="docs/media/hero.gif" width="640" alt="Hold ⌥ and tap Tab to move through sessions, most urgent first">
@@ -101,10 +122,11 @@ Muster adds one hook to the agent's own settings and removes exactly that when y
 | Keys | |
 |---|---|
 | <kbd>⌥</kbd> <kbd>Tab</kbd> | Switch. Tap to step, release to open, or click a row |
-| <kbd>⌥</kbd> <kbd>↩</kbd> · <kbd>⌥</kbd> <kbd>⌫</kbd> · <kbd>⌥</kbd> <kbd>1</kbd>–<kbd>9</kbd> | Allow · deny · answer the selected prompt |
+| <kbd>⌥</kbd> <kbd>↩</kbd> · <kbd>⌥</kbd> <kbd>⌫</kbd> · <kbd>⌥</kbd> <kbd>1</kbd>–<kbd>9</kbd> | Allow · deny · answer the prompt on the alert or in the switcher |
+| <kbd>⌥</kbd> <kbd>↓</kbd> · <kbd>⌥</kbd> <kbd>↑</kbd> | Unfold the alert's details · fold them |
 | <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>Space</kbd> | Search every session |
 
-Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`, `muster://welcome`, `muster://whats-new`.
+Muster takes <kbd>⌥</kbd><kbd>↩</kbd>, <kbd>⌥</kbd><kbd>⌫</kbd>, the arrows and the digits only while a prompt or the switcher is on screen, and lets go of them while you type in another app, so they keep working in your editor. Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`, `muster://welcome`, `muster://whats-new`.
 
 <details>
 <summary><b>Why not just a notification?</b></summary>

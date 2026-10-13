@@ -11,7 +11,9 @@
 ## What it does
 
 - Counts the sessions waiting on you in the menu bar, and shows an alert at the top of the screen when one needs you.
-- Answers Claude Code and Codex permission prompts, questions and plan approvals from that alert (Option-Return allows, Option-Delete denies). If Muster isn't running, the agent asks the usual way.
+- Answers Claude Code and Codex permission prompts, questions and plan approvals from that alert (Option-Return allows, Option-Delete denies, Option-1 to Option-9 pick an option). The alert shows its keys. If Muster isn't running, the agent asks the usual way.
+- Option-Down unfolds the alert to show the agent's reason for asking, the whole command, the file and size of an edit, every option of a question with its note, the plan, and the folder. Option-Up folds it.
+- Takes those keys only while a prompt or the switcher is on screen, and lets go of them while you type in another app, so Option-Delete and the arrows keep working in your editor.
 - Option-Tab opens a switcher ordered by urgency: waiting on you, working, then recently done. Letting go opens the session in Claude's app, the Codex thread, Cursor's Agents window, or the terminal a CLI session runs in.
 - Control-Option-Space searches every session from the last three hours, with tokens and an estimate of the cost at API list prices.
 - Sessions stopped by a usage limit or a sign-out don't count as needing you; they show when the limit resets.

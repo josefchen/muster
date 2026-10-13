@@ -27,9 +27,9 @@
  "installUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg",
  "softwareVersion": "1.2.0", "releaseNotes": "https://agentmuster.app/changelog", "fileSize": "2 MB",
  "image": "https://agentmuster.app/media/social-preview.png",
- "screenshot": ["https://agentmuster.app/media/hero-poster.jpg", "https://agentmuster.app/media/alert.jpg", "https://agentmuster.app/media/appearance.jpg"],
+ "screenshot": ["https://agentmuster.app/media/hero-poster.jpg", "https://agentmuster.app/media/alert.jpg", "https://agentmuster.app/media/peek-light.jpg", "https://agentmuster.app/media/appearance.jpg"],
  "featureList": ["See which Claude Code, Codex or Cursor session needs you", "Allow or deny a command from an alert without switching apps",
-                 "Switch to any session with Option-Tab", "Search sessions from the last three hours", "Tokens and API-rate cost per session"],
+                 "See the agent's reason, the whole command or every option with Option-Down", "Switch to any session with Option-Tab", "Search sessions from the last three hours", "Tokens and API-rate cost per session"],
  "isAccessibleForFree": true, "license": "https://opensource.org/licenses/MIT",
  "codeRepository": "https://github.com/josefchen/muster", "sameAs": ["https://github.com/josefchen/muster"],
  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
@@ -53,7 +53,7 @@
     --cap-shadow: inset 0 -1px 0 rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1), 0 10px 22px -10px rgba(0,0,0,.3);
     --media-shadow: 0 50px 100px -40px rgba(40,20,80,.45), 0 0 0 1px rgba(0,0,0,.06);
     --claude: #e07a1f; --codex: #3274f0; --cursor: #8a4ff0;
-    --orange: #ff9500; --orange-tint: rgba(255,149,0,.14); --orange-edge: rgba(255,149,0,.45);
+    --orange: #ff9500; --orange-tint: rgba(255,149,0,.14); --orange-edge: rgba(255,149,0,.45); --orange-wash: rgba(255,149,0,.09);
     --wall: #ecdcf0; --wall-a: rgba(255,170,120,.8); --wall-b: rgba(140,160,255,.75);
     --mb-bg: rgba(255,255,255,.5); --mb-fg: #1d1d1f;
     --win: #fbfbfd; --win-edge: rgba(0,0,0,.1); --win-dim: #86868b; --dot: #dcdce0;
@@ -70,7 +70,7 @@
       --cap-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 0 #000, 0 12px 24px -8px rgba(0,0,0,.7);
       --media-shadow: 0 50px 110px -30px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.08);
       --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
-      --orange: #ff9f0a; --orange-tint: rgba(255,159,10,.14); --orange-edge: rgba(255,159,10,.45);
+      --orange: #ff9f0a; --orange-tint: rgba(255,159,10,.14); --orange-edge: rgba(255,159,10,.45); --orange-wash: rgba(255,159,10,.1);
       --wall: #120e22; --wall-a: rgba(120,70,200,.75); --wall-b: rgba(40,90,200,.6);
       --mb-bg: rgba(20,20,26,.5); --mb-fg: #f5f5f7;
       --win: #1f1f24; --win-edge: rgba(255,255,255,.08); --win-dim: #8e8e96; --dot: #3a3a40;
@@ -100,7 +100,7 @@
   header { padding: 136px 0 0; text-align: center; }
   .icon { width: 88px; height: 88px; margin: 0 auto 28px; filter: drop-shadow(0 18px 30px rgba(0,0,0,.28)); }
   h1 { font-size: clamp(46px, 8vw, 88px); line-height: 1.02; letter-spacing: -.045em; font-weight: 700; }
-  h1 span { background: linear-gradient(90deg, var(--claude), var(--cursor) 55%, var(--codex)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  h1 span { color: var(--orange); }   /* the app's "needs you" orange: what waiting looks like in Muster */
   .lede { margin: 22px auto 0; max-width: 540px; font-size: 20px; line-height: 1.45; color: var(--dim); letter-spacing: -.01em; }
   .ctas { margin-top: 34px; display: flex; gap: 12px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .btn { display: inline-flex; align-items: center; gap: 9px; background: var(--btn); color: var(--btn-fg); font-weight: 600;
@@ -179,8 +179,8 @@
   .faq { display: grid; grid-template-columns: 1fr 1fr; gap: 36px 56px; margin: 64px auto 0; max-width: 900px; text-align: left; }
   .faq h3 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
   .faq p { margin: 6px 0 0; max-width: none; color: var(--dim); font-size: 15px; line-height: 1.5; }
-  .faq a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--wire); text-underline-offset: 3px; }
-  .faq a:hover { text-decoration-color: var(--fg); }
+  .faq a, .details a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--wire); text-underline-offset: 3px; }
+  .faq a:hover, .details a:hover { text-decoration-color: var(--fg); }
   .closer { text-align: center; padding: 168px 0 128px; }
   .closer .icon { width: 72px; height: 72px; margin-bottom: 26px; }
   .closer h2 { font-size: clamp(36px, 5.4vw, 60px); }
@@ -244,12 +244,11 @@
   .term .bashdot { animation: bashdot 10s infinite; }
 
   .ping { position: absolute; left: 50%; top: 5.2%; z-index: 4; width: 60cqw; margin-left: -30cqw; padding: .67cqw; border-radius: 2.4cqw;
-          background: var(--glass-alert); border: 1px solid var(--glass-alert-edge);
+          background: linear-gradient(var(--orange-wash), var(--orange-wash)), var(--glass-alert); border: 1px solid var(--glass-alert-edge);
           backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
           box-shadow: 0 2cqw 5cqw -1.5cqw rgba(0,0,0,.5); opacity: 0; transform: translateY(-140%); animation: ping 10s infinite; }
   .ping .rows { position: relative; height: 6cqw; }
-  .ping .row { position: absolute; inset: 0; display: flex; align-items: center; gap: 1.35cqw; padding: 0 1.55cqw 0 1.75cqw; border-radius: 1.78cqw;
-               background: var(--orange-tint); border: 1px solid var(--orange-edge); }
+  .ping .row { position: absolute; inset: 0; display: flex; align-items: center; gap: 1.35cqw; padding: 0 1.55cqw 0 1.75cqw; }
   .ping .row.first { animation: first 10s infinite; }
   .ping .row.second { opacity: 0; animation: second 10s infinite; }
   .ping img { width: 3.33cqw; height: 3.33cqw; flex: none; }
@@ -257,12 +256,16 @@
   .ping .txt b { font-size: 1.55cqw; font-weight: 650; color: var(--fg); white-space: nowrap; }
   .ping .txt span { font-size: 1.33cqw; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ping .txt code { font: 600 1.27cqw/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--fg); background: none; padding: 0; margin-left: .45cqw; }
-  .ping .side { display: grid; justify-items: end; gap: .45cqw; flex: none; }
+  .ping .side { display: grid; justify-items: end; gap: .45cqw; flex: none; align-self: flex-start; margin-top: 1.2cqw; }
   .ping .need { font-size: 1.33cqw; font-weight: 650; color: var(--orange); display: flex; align-items: center; gap: .65cqw; }
   .ping .need::before { content: ""; width: .78cqw; height: .78cqw; border-radius: 50%; background: var(--orange); }
-  .ping .hint { font-size: 1.22cqw; font-weight: 500; color: var(--faint); white-space: nowrap; }
-  .ping .more { height: 0; overflow: hidden; text-align: center; font-size: 1.22cqw; font-weight: 500; color: var(--faint);
-                line-height: 2.3cqw; opacity: 0; animation: more 10s infinite; }
+  .ping .keyline { display: flex; justify-content: center; align-items: center; height: 2.6cqw; margin-bottom: .2cqw;
+                   font-size: 1.22cqw; font-weight: 500; color: var(--dim); white-space: nowrap; }
+  .ping .keyline span { display: inline-flex; align-items: center; gap: .6cqw; }
+  .ping .keyline span + span { margin-left: 2.2cqw; }
+  .ping .keyline i { font-style: normal; display: inline-flex; align-items: center; justify-content: center; min-width: 2.5cqw; height: 1.95cqw;
+                     padding: 0 .5cqw; border-radius: .5cqw; background: var(--pill); border: 1px solid var(--wire); }
+  .ping .keyline .more { max-width: 0; margin-left: 0; overflow: hidden; opacity: 0; animation: more 10s infinite; }
 
   .keys { position: absolute; left: 50%; bottom: 6%; z-index: 4; display: flex; gap: 1cqw; transform: translateX(-50%); opacity: 0; animation: keys 10s infinite; }
   .keys .cap { min-width: 5.4cqw; height: 5.4cqw; padding: 0 1.4cqw; border-radius: 1.2cqw; font-size: 2.4cqw; animation: press 10s infinite; }
@@ -278,7 +281,7 @@
   }
   @keyframes first { 0%, 14% { opacity: 1; transform: none; } 15.5%, 31% { opacity: 0; transform: translateY(.6cqw); } 32.5%, 100% { opacity: 1; transform: none; } }
   @keyframes second { 0%, 14% { opacity: 0; transform: translateY(-.6cqw); } 15.5%, 31% { opacity: 1; transform: none; } 32.5%, 100% { opacity: 0; transform: translateY(-.6cqw); } }
-  @keyframes more { 0%, 14% { height: 0; opacity: 0; } 16%, 31% { height: 2.3cqw; opacity: 1; } 33%, 100% { height: 0; opacity: 0; } }
+  @keyframes more { 0%, 14% { max-width: 0; margin-left: 0; opacity: 0; } 16%, 31% { max-width: 16cqw; margin-left: 2.2cqw; opacity: 1; } 33%, 100% { max-width: 0; margin-left: 0; opacity: 0; } }
   @keyframes keys { 0%, 21% { opacity: 0; transform: translate(-50%, 1.5cqw); } 25%, 54% { opacity: 1; transform: translate(-50%, 0); } 59%, 100% { opacity: 0; transform: translate(-50%, 0); } }
   @keyframes press {
     0%, 29.5% { transform: none; filter: none; } 30.5%, 31.5% { transform: translateY(.35cqw) scale(.96); filter: brightness(.86); }
@@ -291,8 +294,8 @@
   @keyframes bashdot { 0%, 52% { color: #ff9f0a; } 54%, 96% { color: #3fca6b; } 100% { color: #ff9f0a; } }
   @keyframes caret { 50% { opacity: 0; } }
   @media (prefers-reduced-motion: reduce) {
-    .menubar .count .two, .ping, .keys, .term .ask, .ping .more, .ping .row.second { animation: none; opacity: 1; }
-    .ping .more { height: 2.3cqw; }
+    .menubar .count .two, .ping, .keys, .term .ask, .ping .keyline .more, .ping .row.second { animation: none; opacity: 1; }
+    .ping .keyline .more { max-width: 16cqw; margin-left: 2.2cqw; }
     .menubar .count .one, .ping .row.first, .term .work, .term .done { animation: none; opacity: 0; }
     .ping { transform: none; }
     .keys { transform: translateX(-50%); }
@@ -410,15 +413,15 @@
           <div class="row first">
             <img src="/media/agent-claude.png" alt="">
             <div class="txt"><b>Migrate auth to passkeys</b><span>Wants to run<code>npm run migrate -- --env staging</code></span></div>
-            <div class="side"><span class="need">Needs you</span><span class="hint">⌥↩ Allow&nbsp;&nbsp;&nbsp;⌥⌫ Deny</span></div>
+            <div class="side"><span class="need">Needs you</span></div>
           </div>
           <div class="row second">
             <img src="/media/agent-codex.png" alt="">
             <div class="txt"><b>Port the parser to Rust</b><span>Wants to run<code>cargo test --workspace</code></span></div>
-            <div class="side"><span class="need">Needs you</span><span class="hint">⌥↩ Allow&nbsp;&nbsp;&nbsp;⌥⌫ Deny</span></div>
+            <div class="side"><span class="need">Needs you</span></div>
           </div>
         </div>
-        <div class="more">1 more waiting&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;⌥Tab to see all</div>
+        <div class="keyline"><span><i>⌥↩</i>Allow</span><span><i>⌥⌫</i>Deny</span><span><i>⌥↓</i>Details</span><span class="more"><i>⌥Tab</i>1 more waiting</span></div>
       </div>
       <div class="keys"><span class="cap">⌥</span><span class="cap">↩</span></div>
     </div>
@@ -426,6 +429,22 @@
   <p class="under reveal">Two agents asked. Two keystrokes, and you never left your editor. <kbd>⌥</kbd><kbd>↩</kbd> allows, <kbd>⌥</kbd><kbd>⌫</kbd> denies, on any screen, notch or not.
     <small>For Claude Code and Codex, once you turn it on. If Muster quits, your agent just asks the usual way.</small></p>
 </div></header>
+
+<section class="wrap split reveal" id="details">
+  <div class="copy">
+    <div class="caps"><span class="cap">⌥</span><span class="cap">↓</span></div>
+    <h2>See why before you answer.</h2>
+    <p>Press ⌥↓ and the alert unfolds: the agent's reason for asking, the whole command, the file and size of an edit, or every option of a question with its note.</p>
+    <p>Pick an option with ⌥1, ⌥2 or ⌥3, or fold it away with ⌥↑. The alert always shows which keys it takes.</p>
+  </div>
+  <div class="frame">
+    <picture>
+      <source srcset="/media/peek-dark.jpg" media="(prefers-color-scheme: dark)">
+      <img src="/media/peek-light.jpg" width="1280" height="500" loading="lazy"
+           alt="Muster's alert unfolded on a question from Claude Code: three options, each with the agent's note, answered with Option-1 to Option-3">
+    </picture>
+  </div>
+</section>
 
 <section class="wrap center reveal">
   <div class="caps"><span class="cap">⌥</span><span class="cap">Tab</span></div>
@@ -478,6 +497,9 @@
     <div><h3>Your shortcuts</h3><p>Change ⌥Tab and ⌃⌥Space. Muster tells you if another app already uses one.</p></div>
     <div><h3>Raycast and Alfred</h3><p><code>muster://next</code> opens the session that needs you most. <code>muster://search</code> opens search.</p></div>
     <div><h3>Unread until you look</h3><p>A finished session stays marked until you open it.</p></div>
+    <div><h3>Your keys stay yours</h3><p>Muster takes ⌥↩, ⌥⌫ and the arrows only while something on screen needs them, and lets go while you type elsewhere.</p></div>
+    <div><h3>Usage limits wait their turn</h3><p>A session stopped by a usage limit moves out of your way and shows when the limit resets.</p></div>
+    <div><h3>What changed, once</h3><p>After an update, Muster shows what's new a single time. Every release is in the <a href="/changelog">changelog</a>.</p></div>
   </div>
 </section>
 
@@ -504,7 +526,7 @@
 
 <section class="wrap center reveal oss" id="open-source">
   <h2>Open source, because<br>it can say yes for you.</h2>
-  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed, and every release passes 199 end-to-end tests that drive the real app before it ships.</p>
+  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed, and every release passes 212 end-to-end tests that drive the real app before it ships.</p>
   <a class="ghost" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Read the code on GitHub</a>
 </section>
 
@@ -512,6 +534,8 @@
   <h2>Questions.</h2>
   <div class="faq">
     <div><h3>How do I know when Claude Code needs me?</h3><p>Muster counts the sessions waiting on you in the menu bar and shows an alert at the top of your screen. To compare it with Claude Code's own options, read <a href="/guides/claude-code-notifications-mac">getting notified when Claude Code needs you</a>.</p></div>
+    <div><h3>Can I see what the agent wants before I answer?</h3><p>Yes. Press ⌥↓ on the alert to see the agent's reason, the whole command, or every option of a question with its note, then answer with ⌥↩ or ⌥1 to ⌥9.</p></div>
+    <div><h3>Will its shortcuts get in the way of my editor?</h3><p>No. Muster takes ⌥↩, ⌥⌫, the arrows and the digits only while a prompt or the switcher is on screen, and lets go of them while you type in another app.</p></div>
     <div><h3>Does it work with several sessions at once?</h3><p>Yes. Every Claude Code, Codex and Cursor session from the last three hours is in one list, with the one that needs you first.</p></div>
     <div><h3>Is it free?</h3><p>Yes. Muster is open source under the MIT License, with no account.</p></div>
     <div><h3>Does it send my code anywhere?</h3><p>No. It reads the session files your agents write and talks to them over 127.0.0.1. The only network request is an update check you can turn on.</p></div>
