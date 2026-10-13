@@ -2,7 +2,7 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
-## 1.2.0 · Unreleased
+## 1.2.0 · 2026-10-13
 
 Only the errors you can fix ask for you.
 
