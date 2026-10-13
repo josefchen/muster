@@ -31,6 +31,10 @@ CROP="$((720 * SCALE)):$((270 * SCALE)):$(((W / 2 - 360) * SCALE)):$(((BAR - 26)
 ffmpeg -v error -y -ss 0.4 -t 8.4 -i "$RAW" -vf "crop=$CROP,fps=30,scale=1440:-2:flags=lanczos" \
   -c:v libx264 -pix_fmt yuv420p -crf 18 -movflags +faststart -an "$OUT/answer-$THEME.mp4"
 ffmpeg -v error -y -i "$OUT/answer-$THEME.mp4" -c:v libvpx-vp9 -b:v 0 -crf 32 -an "$OUT/answer-$THEME.webm"
-# Bayer dithering keeps the gradient backdrop from bloating the GIF.
-ffmpeg -v error -y -i "$OUT/answer-$THEME.mp4" -vf "fps=20,scale=760:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=192:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" "$OUT/answer-$THEME.gif"
+# The GIF opens on both agents waiting (2.5 s into the clip), plays to the end, then wraps
+# through the calm before the first alert (from 0.9 s), so its first frame shows Muster at
+# work rather than an empty backdrop. Bayer dithering keeps the gradient from bloating it.
+ffmpeg -v error -y -i "$OUT/answer-$THEME.mp4" -filter_complex \
+  "[0:v]trim=start=2.5,setpts=PTS-STARTPTS[a];[0:v]trim=start=0.9:end=2.5,setpts=PTS-STARTPTS[b];[a][b]concat=n=2:v=1:a=0,fps=20,scale=760:-2:flags=lanczos,split[c][d];[c]palettegen=max_colors=192:stats_mode=diff[p];[d][p]paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle" \
+  "$OUT/answer-$THEME.gif"
 ls -la "$OUT"/answer-"$THEME".*
