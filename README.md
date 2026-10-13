@@ -5,7 +5,7 @@
 <h1 align="center">Muster</h1>
 
 <p align="center">
-  <b>Every agent, one glance.</b><br>
+  <b>Never keep an agent waiting.</b><br>
   A native Mac menu bar switcher for your Claude Code, Codex and Cursor sessions.
 </p>
 

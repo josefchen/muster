@@ -30,6 +30,10 @@
  "publisher": {"@type": "Organization", "name": "Muster", "url": "https://agentmuster.app/", "logo": "https://agentmuster.app/media/icon.png"},
  "about": [{"@type": "SoftwareApplication", "name": "Claude Code"}, {"@type": "SoftwareApplication", "name": "Muster", "url": "https://agentmuster.app/"}]}
 </script>
+<script>
+  // Phones, tablets and PCs can't install a Mac app: they're offered a GitHub star instead.
+  if (!/Macintosh/.test(navigator.userAgent) || navigator.maxTouchPoints > 1) document.documentElement.classList.add('other');
+</script>
 <link rel="stylesheet" href="/page.css">
 <style>
   article { max-width: 720px; }
@@ -80,7 +84,7 @@
   <div class="links">
     <a href="/changelog">Changelog</a>
     <a class="gh" href="https://github.com/josefchen/muster">GitHub</a>
-    <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
+    <a class="pill dl" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
   </div>
 </div></nav>
 
@@ -161,7 +165,7 @@
       </ul>
       <p>It reads the files Claude Code already writes, so there's no account and nothing leaves your Mac. MIT licensed, for macOS 14 or later.</p>
       <div class="ctas">
-        <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download Muster</a>
+        <a class="btn dl" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download Muster</a>
         <code>brew install --cask josefchen/tap/muster</code>
       </div>
     </div>

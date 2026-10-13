@@ -57,3 +57,6 @@ footer a:hover { color: var(--fg); }
 @media (max-width: 400px) {
   nav .gh { display: none; }
 }
+/* Phones, tablets and PCs get GitHub instead of a Mac download (set in each page's head). */
+.other .dl { display: none !important; }
+.other nav .gh { display: inline; }

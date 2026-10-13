@@ -10,7 +10,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Muster">
 <meta property="og:url" content="https://agentmuster.app/">
-<meta property="og:title" content="Muster: every agent, one glance">
+<meta property="og:title" content="Muster: never keep an agent waiting">
 <meta property="og:description" content="See which Claude, Codex or Cursor session needs you, answer it from anywhere, and jump to it with ⌥Tab. Free and open source.">
 <meta property="og:image" content="https://agentmuster.app/media/social-preview.png">
 <meta property="og:image:width" content="1280">
@@ -38,7 +38,11 @@
 <meta name="theme-color" content="#08080b" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <link rel="icon" href="/media/icon.png">
-<script>document.documentElement.classList.add('js')</script>
+<script>
+  document.documentElement.classList.add('js');
+  // Phones, tablets and PCs can't install a Mac app: they're offered a GitHub star instead.
+  if (!/Macintosh/.test(navigator.userAgent) || navigator.maxTouchPoints > 1) document.documentElement.classList.add('other');
+</script>
 <style>
   :root {
     --bg: #fbfbfd; --fg: #1d1d1f; --dim: #6e6e73; --faint: #8e8e93; --line: rgba(0,0,0,.08); --wire: rgba(0,0,0,.16);
@@ -49,6 +53,12 @@
     --cap-shadow: inset 0 -1px 0 rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1), 0 10px 22px -10px rgba(0,0,0,.3);
     --media-shadow: 0 50px 100px -40px rgba(40,20,80,.45), 0 0 0 1px rgba(0,0,0,.06);
     --claude: #e07a1f; --codex: #3274f0; --cursor: #8a4ff0;
+    --orange: #ff9500; --orange-tint: rgba(255,149,0,.14); --orange-edge: rgba(255,149,0,.45);
+    --wall: #ecdcf0; --wall-a: rgba(255,170,120,.8); --wall-b: rgba(140,160,255,.75);
+    --mb-bg: rgba(255,255,255,.5); --mb-fg: #1d1d1f;
+    --win: #fbfbfd; --win-edge: rgba(0,0,0,.1); --win-dim: #86868b; --dot: #dcdce0;
+    --line-a: rgba(0,0,0,.09); --line-k: rgba(175,82,222,.32); --line-s: rgba(255,149,0,.34);
+    --glass-alert: rgba(255,255,255,.74); --glass-alert-edge: rgba(255,255,255,.9);
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -60,6 +70,12 @@
       --cap-shadow: inset 0 1px 0 rgba(255,255,255,.1), 0 2px 0 #000, 0 12px 24px -8px rgba(0,0,0,.7);
       --media-shadow: 0 50px 110px -30px rgba(0,0,0,.85), 0 0 0 1px rgba(255,255,255,.08);
       --claude: #ee8c33; --codex: #4585fa; --cursor: #9e66fa;
+      --orange: #ff9f0a; --orange-tint: rgba(255,159,10,.14); --orange-edge: rgba(255,159,10,.45);
+      --wall: #120e22; --wall-a: rgba(120,70,200,.75); --wall-b: rgba(40,90,200,.6);
+      --mb-bg: rgba(20,20,26,.5); --mb-fg: #f5f5f7;
+      --win: #1f1f24; --win-edge: rgba(255,255,255,.08); --win-dim: #8e8e96; --dot: #3a3a40;
+      --line-a: rgba(255,255,255,.11); --line-k: rgba(191,90,242,.5); --line-s: rgba(255,159,10,.45);
+      --glass-alert: rgba(40,34,38,.74); --glass-alert-edge: rgba(255,255,255,.1);
     }
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -175,6 +191,134 @@
   .js .reveal { opacity: 0; transform: translateY(20px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
   .js .reveal.in { opacity: 1; transform: none; }
 
+  /* The hero: two agents ask, Muster's alert brings each question to the editor you're in, and
+     two presses of ⌥↩ answer both. Laid out on a 900 × 540 desk that scales with the page
+     (1cqw = 9px at full size), all on one 10 s timeline. */
+  .scene { container-type: inline-size; max-width: 900px; margin: 56px auto 0; }
+  .desk { position: relative; aspect-ratio: 900 / 540; border-radius: 2.2cqw; overflow: hidden; text-align: left;
+          background: radial-gradient(60% 80% at 18% 22%, var(--wall-a), transparent 70%),
+                      radial-gradient(55% 75% at 85% 80%, var(--wall-b), transparent 70%), var(--wall);
+          box-shadow: var(--media-shadow); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+  .menubar { position: absolute; inset: 0 0 auto; z-index: 3; height: 3.4cqw; display: flex; align-items: center; justify-content: space-between;
+             padding: 0 1.8cqw; font-size: 1.45cqw; color: var(--mb-fg); background: var(--mb-bg);
+             backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); }
+  .menubar .menus { display: flex; gap: 2cqw; }
+  .menubar .menus b { font-weight: 650; }
+  .menubar .right { display: flex; align-items: center; gap: 2cqw; font-variant-numeric: tabular-nums; }
+  .menubar .glyph { display: inline-flex; align-items: center; gap: .35cqw; }
+  .menubar svg { width: 2cqw; height: 2cqw; }
+  .menubar .count { position: relative; width: 1cqw; height: 1.8cqw; color: var(--orange); font-weight: 650; }
+  .menubar .count b { position: absolute; inset: 0; font-weight: 650; opacity: 0; }
+  .menubar .count .one { animation: one 10s infinite; }
+  .menubar .count .two { animation: two 10s infinite; }
+
+  .win { position: absolute; border-radius: 1.3cqw; overflow: hidden; background: var(--win); border: 1px solid var(--win-edge);
+         box-shadow: 0 2.4cqw 5cqw -1.5cqw rgba(0,0,0,.45); }
+  .win .bar { height: 3.3cqw; display: flex; align-items: center; gap: .75cqw; padding: 0 1.3cqw; border-bottom: 1px solid var(--win-edge);
+              font-size: 1.25cqw; color: var(--win-dim); }
+  .win .bar i { width: 1.2cqw; height: 1.2cqw; border-radius: 50%; background: var(--dot); }
+  .win .bar span { flex: 1; text-align: center; margin-right: 4cqw; }
+  .editor { left: 4%; top: 11%; width: 52%; height: 74%; z-index: 2; }
+  .editor .bar i:nth-child(1) { background: #ff5f57; } .editor .bar i:nth-child(2) { background: #febc2e; } .editor .bar i:nth-child(3) { background: #28c840; }
+  .code { padding: 2cqw 2.2cqw; display: grid; gap: 1.15cqw; }
+  .code p { height: .95cqw; border-radius: .5cqw; background: var(--line-a); }
+  .code p.k { background: var(--line-k); } .code p.s { background: var(--line-s); }
+  .code p.caret { position: relative; background: none; }
+  .code p.caret::before { content: ""; position: absolute; left: 0; top: 0; width: 17cqw; height: 100%; border-radius: .5cqw; background: var(--line-a); }
+  .code p.caret::after { content: ""; position: absolute; left: 17.8cqw; top: -.35cqw; width: .18cqw; height: 1.65cqw; background: var(--fg);
+                         animation: caret 1.1s steps(1) infinite; }
+  .term { left: 50%; top: 24%; width: 46%; height: 64%; z-index: 1; background: #1b1b1f; border-color: rgba(255,255,255,.08); }
+  .term .bar { color: #8e8e96; border-color: rgba(255,255,255,.07); }
+  .term .bar span { margin: 0 0 0 4cqw; }
+  .term .bar i { background: #3a3a40; }
+  .term .t { position: relative; padding: 1.7cqw 1.6cqw 1.7cqw 7.2cqw; font: 500 1.32cqw/1.62 ui-monospace, "SF Mono", Menlo, monospace; color: #d6d6dc; }
+  .term .t div { white-space: pre; }
+  .term .dim { color: #7c7c86; }
+  .term .ok { color: #3fca6b; }
+  .term .orange { color: #ff9f0a; }
+  .term .blue { color: #7aa7ff; }
+  .term .phase { position: absolute; left: 7.2cqw; right: 1.6cqw; top: 8.12cqw; }
+  .term .work { animation: work 10s infinite; }
+  .term .ask { opacity: 0; animation: ask 10s infinite; }
+  .term .done { opacity: 0; animation: done 10s infinite; }
+  .term .bashdot { animation: bashdot 10s infinite; }
+
+  .ping { position: absolute; left: 50%; top: 5.2%; z-index: 4; width: 60cqw; margin-left: -30cqw; padding: .67cqw; border-radius: 2.4cqw;
+          background: var(--glass-alert); border: 1px solid var(--glass-alert-edge);
+          backdrop-filter: blur(24px) saturate(180%); -webkit-backdrop-filter: blur(24px) saturate(180%);
+          box-shadow: 0 2cqw 5cqw -1.5cqw rgba(0,0,0,.5); opacity: 0; transform: translateY(-140%); animation: ping 10s infinite; }
+  .ping .rows { position: relative; height: 6cqw; }
+  .ping .row { position: absolute; inset: 0; display: flex; align-items: center; gap: 1.35cqw; padding: 0 1.55cqw 0 1.75cqw; border-radius: 1.78cqw;
+               background: var(--orange-tint); border: 1px solid var(--orange-edge); }
+  .ping .row.first { animation: first 10s infinite; }
+  .ping .row.second { opacity: 0; animation: second 10s infinite; }
+  .ping img { width: 3.33cqw; height: 3.33cqw; flex: none; }
+  .ping .txt { flex: 1; min-width: 0; display: grid; gap: .2cqw; }
+  .ping .txt b { font-size: 1.55cqw; font-weight: 650; color: var(--fg); white-space: nowrap; }
+  .ping .txt span { font-size: 1.33cqw; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ping .txt code { font: 600 1.27cqw/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--fg); background: none; padding: 0; margin-left: .45cqw; }
+  .ping .side { display: grid; justify-items: end; gap: .45cqw; flex: none; }
+  .ping .need { font-size: 1.33cqw; font-weight: 650; color: var(--orange); display: flex; align-items: center; gap: .65cqw; }
+  .ping .need::before { content: ""; width: .78cqw; height: .78cqw; border-radius: 50%; background: var(--orange); }
+  .ping .hint { font-size: 1.22cqw; font-weight: 500; color: var(--faint); white-space: nowrap; }
+  .ping .more { height: 0; overflow: hidden; text-align: center; font-size: 1.22cqw; font-weight: 500; color: var(--faint);
+                line-height: 2.3cqw; opacity: 0; animation: more 10s infinite; }
+
+  .keys { position: absolute; left: 50%; bottom: 6%; z-index: 4; display: flex; gap: 1cqw; transform: translateX(-50%); opacity: 0; animation: keys 10s infinite; }
+  .keys .cap { min-width: 5.4cqw; height: 5.4cqw; padding: 0 1.4cqw; border-radius: 1.2cqw; font-size: 2.4cqw; animation: press 10s infinite; }
+
+  /* 8% Claude asks · 15% Codex asks · 31% ⌥↩ answers Claude · 51% ⌥↩ answers Codex · 96% start over. */
+  @keyframes one { 0%, 7% { opacity: 0; } 8%, 14% { opacity: 1; } 15%, 32% { opacity: 0; } 33%, 53% { opacity: 1; } 55%, 100% { opacity: 0; } }
+  @keyframes two { 0%, 14% { opacity: 0; } 15%, 32% { opacity: 1; } 33%, 100% { opacity: 0; } }
+  @keyframes ping {
+    0%, 7% { opacity: 0; transform: translateY(-140%); }
+    11% { opacity: 1; transform: translateY(0); }
+    52% { opacity: 1; transform: translateY(0); }
+    57%, 100% { opacity: 0; transform: translateY(-140%); }
+  }
+  @keyframes first { 0%, 31.5% { opacity: 1; transform: none; } 33.5%, 100% { opacity: 0; transform: translateY(-.6cqw); } }
+  @keyframes second { 0%, 31.5% { opacity: 0; transform: translateY(.6cqw); } 33.5%, 100% { opacity: 1; transform: none; } }
+  @keyframes more { 0%, 14% { height: 0; opacity: 0; } 16%, 31% { height: 2.3cqw; opacity: 1; } 33%, 100% { height: 0; opacity: 0; } }
+  @keyframes keys { 0%, 21% { opacity: 0; transform: translate(-50%, 1.5cqw); } 25%, 54% { opacity: 1; transform: translate(-50%, 0); } 59%, 100% { opacity: 0; transform: translate(-50%, 0); } }
+  @keyframes press {
+    0%, 29.5% { transform: none; filter: none; } 30.5%, 31.5% { transform: translateY(.35cqw) scale(.96); filter: brightness(.86); }
+    32.5%, 49.5% { transform: none; filter: none; } 50.5%, 51.5% { transform: translateY(.35cqw) scale(.96); filter: brightness(.86); }
+    52.5%, 100% { transform: none; filter: none; }
+  }
+  @keyframes work { 0%, 7% { opacity: 1; } 8%, 96% { opacity: 0; } 100% { opacity: 1; } }
+  @keyframes ask { 0%, 7% { opacity: 0; } 8%, 31.5% { opacity: 1; } 32.5%, 100% { opacity: 0; } }
+  @keyframes done { 0%, 32% { opacity: 0; } 34%, 94% { opacity: 1; } 97%, 100% { opacity: 0; } }
+  @keyframes bashdot { 0%, 32% { color: #ff9f0a; } 34%, 96% { color: #3fca6b; } 100% { color: #ff9f0a; } }
+  @keyframes caret { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .menubar .count .two, .ping, .keys, .term .ask, .ping .more, .ping .row.first { animation: none; opacity: 1; }
+    .ping .more { height: 2.3cqw; }
+    .menubar .count .one, .ping .row.second, .term .work, .term .done { animation: none; opacity: 0; }
+    .ping { transform: none; }
+    .keys { transform: translateX(-50%); }
+    .keys .cap, .code p.caret::after, .term .bashdot { animation: none; }
+  }
+
+  .pillink { display: inline-flex; align-items: center; gap: 8px; margin: 0 auto 20px; padding: 6px 14px 6px 11px; border-radius: 999px;
+             font-size: 14px; font-weight: 500; color: var(--dim); background: var(--glass); border: 1px solid var(--line); }
+  .pillink svg { width: 16px; height: 16px; color: var(--fg); }
+  .pillink:hover { color: var(--fg); border-color: var(--wire); }
+  .under { margin: 28px auto 0; max-width: 560px; color: var(--dim); font-size: 17px; }
+  .under kbd { font-size: 13px; }
+  .under small { display: block; margin-top: 8px; font-size: 14px; color: var(--faint); }
+  .notmac { display: none; margin: 30px auto 0; max-width: 460px; padding: 18px 20px; border-radius: 18px; border: 1px solid var(--line);
+            background: var(--glass); color: var(--dim); font-size: 16px; }
+  .notmac b { color: var(--fg); }
+  .notmac .btn { margin-top: 14px; }
+  .other .dl { display: none !important; }
+  .other nav .gh { display: inline; }
+  .other .notmac { display: block; }
+
+  .numbers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; max-width: 960px; margin: 0 auto; padding-top: 140px; text-align: center; }
+  .numbers b { display: block; font-size: clamp(40px, 6vw, 64px); line-height: 1; letter-spacing: -.045em; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .numbers span { display: block; margin-top: 10px; color: var(--dim); font-size: 15px; line-height: 1.4; }
+  .oss .ghost { margin-top: 30px; gap: 9px; }
+  .oss .ghost svg { width: 18px; height: 18px; }
   @media (max-width: 860px) {
     header { padding-top: 112px; }
     section { padding-top: 120px; }
@@ -196,6 +340,8 @@
     .alert, .appearance { border-radius: 16px; }
     .details { grid-template-columns: 1fr; }
     .faq { grid-template-columns: 1fr; gap: 26px; margin-top: 44px; }
+    .numbers { grid-template-columns: 1fr 1fr; gap: 36px 16px; padding-top: 100px; }
+    .scene { margin-top: 40px; }
     .diagram { padding: 40px 16px 28px; }
     .agents { grid-auto-flow: row; }
   }
@@ -214,15 +360,16 @@
   <div class="links">
     <a href="/changelog">Changelog</a>
     <a class="gh" href="https://github.com/josefchen/muster">GitHub</a>
-    <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
+    <a class="pill dl" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
   </div>
 </div></nav>
 
 <header><div class="wrap">
   <img class="icon" src="/media/icon.png" alt="Muster">
-  <h1>Every agent,<br><span>one glance.</span></h1>
-  <p class="lede">Muster watches your Claude Code, Codex and Cursor sessions from the menu bar and tells you which one is waiting on you.</p>
-  <div class="ctas">
+  <a class="pillink" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Free and open source</a>
+  <h1>Never keep an<br>agent <span>waiting.</span></h1>
+  <p class="lede">Muster tells you the moment Claude Code, Codex or Cursor needs you, and lets you answer with one keystroke, from whatever you're doing.</p>
+  <div class="ctas dl">
     <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">
       <svg viewBox="0 0 17 20" fill="currentColor" aria-hidden="true"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
       Download for Mac
@@ -231,28 +378,75 @@
       <span aria-hidden="true">$</span><b>brew install --cask josefchen/tap/muster</b><em>Copy</em>
     </button>
   </div>
-  <p class="meta">Free and open source · macOS 14 or later · 2 MB download</p>
-  <div class="stage reveal">
+  <div class="notmac"><b>Muster is a Mac app.</b> Open this page on your Mac to download it, or star it on GitHub to find it later.<br>
+    <a class="btn" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Star on GitHub</a></div>
+  <p class="meta">Notarized by Apple · macOS 14 or later · 2 MB</p>
+  <div class="scene reveal" role="img" aria-label="While you work in an editor, Claude Code and then Codex each ask to run a command. Muster's alert brings both questions to the top of the screen, and two presses of Option-Return answer them.">
+    <div class="desk" aria-hidden="true">
+      <div class="menubar">
+        <div class="menus"><b>Editor</b><span>File</span><span>Edit</span><span>View</span><span>Window</span></div>
+        <div class="right">
+          <span class="glyph"><svg viewBox="0 0 18 18" fill="currentColor"><rect x="4" y="3.3" width="10" height="4.2" rx="1.6" opacity=".45"/><rect x="3" y="7.8" width="12" height="4.2" rx="1.6" opacity=".7"/><rect x="2" y="12.3" width="14" height="4.2" rx="1.6"/></svg><span class="count"><b class="one">1</b><b class="two">2</b></span></span>
+          <span>9:41</span>
+        </div>
+      </div>
+      <div class="win editor">
+        <div class="bar"><i></i><i></i><i></i><span>login.tsx — atlas</span></div>
+        <div class="code"><p class="k" style="width:34%"></p><p style="width:58%"></p><p style="width:71%"></p><p class="s" style="width:46%"></p><p style="visibility:hidden"></p><p class="k" style="width:28%"></p><p style="width:64%"></p><p class="caret" style="width:100%"></p><p style="width:52%"></p><p class="s" style="width:61%"></p><p style="visibility:hidden"></p><p style="width:44%"></p><p class="k" style="width:37%"></p></div>
+      </div>
+      <div class="win term">
+        <div class="bar"><i></i><i></i><i></i><span>claude — atlas</span></div>
+        <div class="t">
+          <div class="dim">&gt; move sign-in to passkeys</div>
+          <div><span class="ok">●</span> Read(src/auth/session.ts)</div>
+          <div><span class="bashdot">●</span> Bash(npm run migrate -- --env staging)</div>
+          <div class="phase work"><span class="orange">✻</span> Working…</div>
+          <div class="phase ask"><div>  Do you want to proceed?</div><div class="blue">  ❯ 1. Yes</div><div class="dim">    2. No</div></div>
+          <div class="phase done"><div class="dim">  ⎿  Migrated 14 tables in 2.1s</div><div><span class="ok">●</span> Update(src/auth/login.tsx)</div><div><span class="orange">✻</span> Adding the passkey button…</div></div>
+        </div>
+      </div>
+      <div class="ping">
+        <div class="rows">
+          <div class="row first">
+            <img src="/media/agent-claude.png" alt="">
+            <div class="txt"><b>Migrate auth to passkeys</b><span>Wants to run<code>npm run migrate -- --env staging</code></span></div>
+            <div class="side"><span class="need">Needs you</span><span class="hint">⌥↩ Allow&nbsp;&nbsp;&nbsp;⌥⌫ Deny</span></div>
+          </div>
+          <div class="row second">
+            <img src="/media/agent-codex.png" alt="">
+            <div class="txt"><b>Port the parser to Rust</b><span>Wants to run<code>cargo test --workspace</code></span></div>
+            <div class="side"><span class="need">Needs you</span><span class="hint">⌥↩ Allow&nbsp;&nbsp;&nbsp;⌥⌫ Deny</span></div>
+          </div>
+        </div>
+        <div class="more">1 more waiting&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp;⌥Tab to see all</div>
+      </div>
+      <div class="keys"><span class="cap">⌥</span><span class="cap">↩</span></div>
+    </div>
+  </div>
+  <p class="under reveal">Two agents asked. Two keystrokes, and you never left your editor. <kbd>⌥</kbd><kbd>↩</kbd> allows, <kbd>⌥</kbd><kbd>⌫</kbd> denies, on any screen, notch or not.
+    <small>For Claude Code and Codex, once you turn it on. If Muster quits, your agent just asks the usual way.</small></p>
+</div></header>
+
+<section class="wrap center reveal">
+  <div class="caps"><span class="cap">⌥</span><span class="cap">Tab</span></div>
+  <h2>Jump to the one that needs you.</h2>
+  <p>Hold ⌥ and tap Tab. Every session is there, the one waiting on you first. Let go and you're in its window, or the terminal it runs in.</p>
+  <div class="stage">
     <div class="frame">
-      <video autoplay muted loop playsinline preload="auto" poster="/media/hero-poster.jpg" width="1200" height="1062"
+      <video autoplay muted loop playsinline preload="none" poster="/media/hero-poster.jpg" width="1200" height="1062"
              aria-label="Holding Option and tapping Tab moves through sessions, most urgent first">
         <source src="/media/hero.webm" type="video/webm">
         <source src="/media/hero.mp4" type="video/mp4">
       </video>
     </div>
   </div>
-  <div class="howto reveal">
-    <div class="caps"><span class="cap">⌥</span><span class="cap">Tab</span></div>
-    <p>Hold ⌥ and tap Tab. The session that needs you is first, and letting go opens it.</p>
-  </div>
-</div></header>
+</section>
 
-<section class="wrap center reveal">
-  <div class="caps"><span class="cap">⌥</span><span class="cap">↩</span></div>
-  <h2>Answer without switching.</h2>
-  <p>When an agent wants to run a command, the request shows up at the top of whichever screen you're on. Allow it from there, or deny it with <kbd>⌥</kbd><kbd>⌫</kbd>. Questions and plan approvals work the same way.</p>
-  <div class="alert"><img src="/media/alert.jpg" width="1240" height="260" alt="Muster's alert: Claude wants to run npm run migrate, with Allow and Deny shortcuts" loading="lazy"></div>
-  <p class="note">For Claude Code and Codex, once you turn it on. If Muster isn't running, the agent asks the usual way.</p>
+<section class="wrap numbers reveal" aria-label="Muster in numbers">
+  <div><b>2 MB</b><span>to download</span></div>
+  <div><b>0.4%</b><span>of one core, with ten agents busy</span></div>
+  <div><b>20 MB</b><span>of memory</span></div>
+  <div><b>0</b><span>accounts or trackers</span></div>
 </section>
 
 <section class="wrap split reveal">
@@ -308,6 +502,12 @@
   </div>
 </section>
 
+<section class="wrap center reveal oss" id="open-source">
+  <h2>Open source, because<br>it can say yes for you.</h2>
+  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed, and every release passes 199 end-to-end tests that drive the real app before it ships.</p>
+  <a class="ghost" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Read the code on GitHub</a>
+</section>
+
 <section class="wrap center reveal" id="questions">
   <h2>Questions.</h2>
   <div class="faq">
@@ -316,7 +516,7 @@
     <div><h3>Is it free?</h3><p>Yes. Muster is open source under the MIT License, with no account.</p></div>
     <div><h3>Does it send my code anywhere?</h3><p>No. It reads the session files your agents write and talks to them over 127.0.0.1. The only network request is an update check you can turn on.</p></div>
     <div><h3>What if Muster quits while an agent is asking?</h3><p>The agent falls back to its own prompt, the same as without Muster.</p></div>
-    <div><h3>Can it answer Cursor's prompts?</h3><p>Not yet. Cursor's hooks can't step aside for prompts Cursor would approve itself, so Muster opens those in Cursor.</p></div>
+    <div><h3>Can it answer Cursor's prompts?</h3><p>Not yet. Cursor doesn't let another app answer for it, so Muster shows you which chat is waiting and opens it in Cursor.</p></div>
     <div><h3>Which Macs does it run on?</h3><p>macOS 14 or later, on Apple silicon and Intel.</p></div>
     <div><h3>What's new?</h3><p>Every release is in the <a href="/changelog">changelog</a>. Muster also shows what changed after each update.</p></div>
   </div>
@@ -326,7 +526,7 @@
   <img class="icon" src="/media/icon.png" alt="">
   <h2>Run more agents<br>without losing track.</h2>
   <div class="ctas">
-    <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download for Mac</a>
+    <a class="btn dl" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download for Mac</a>
     <a class="ghost" href="https://github.com/josefchen/muster">View on GitHub</a>
   </div>
 </div></div>

@@ -324,7 +324,7 @@ private struct HelloPage: View {
             }
             VStack(spacing: 6) {
                 Text("Muster").font(.system(size: 34, weight: .bold))
-                Text("Every agent, one glance.").font(.system(size: 17)).foregroundStyle(.secondary)
+                Text("Never keep an agent waiting.").font(.system(size: 17)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 24)
         }

@@ -165,7 +165,7 @@ final class StatusItem: NSObject {
     @objc private func about() {
         NSApp.activate(ignoringOtherApps: true)
         NSApp.orderFrontStandardAboutPanel(options: [
-            .credits: NSAttributedString(string: "Every agent, one glance.\nOpen source under the MIT License.",
+            .credits: NSAttributedString(string: "Never keep an agent waiting.\nOpen source under the MIT License.",
                                          attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])])
     }
 }
