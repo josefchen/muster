@@ -97,7 +97,7 @@ private final class OnboardingWindow: NSWindow, NSWindowDelegate {
 
 /// The desktop blurred behind the window, drawn under the content rather than
 /// around it so text keeps full contrast.
-private struct Frosted: NSViewRepresentable {
+struct Frosted: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
         v.material = .underWindowBackground
@@ -294,7 +294,7 @@ private struct Header: View {
     }
 }
 
-private struct Card<Content: View>: View {
+struct Card<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {

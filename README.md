@@ -12,7 +12,8 @@
 <p align="center">
   <a href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg"><b>Download for Mac</b></a> ·
   <code>brew install --cask josefchen/tap/muster</code> ·
-  <a href="https://agentmuster.app">agentmuster.app</a>
+  <a href="https://agentmuster.app">agentmuster.app</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 <p align="center">
@@ -93,7 +94,7 @@ Muster adds one hook to the agent's own settings and removes exactly that when y
 | <kbd>⌥</kbd> <kbd>↩</kbd> · <kbd>⌥</kbd> <kbd>⌫</kbd> · <kbd>⌥</kbd> <kbd>1</kbd>–<kbd>9</kbd> | Allow · deny · answer the selected prompt |
 | <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>Space</kbd> | Search every session |
 
-Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`, `muster://welcome`.
+Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`, `muster://welcome`, `muster://whats-new`.
 
 <details>
 <summary><b>How it works</b></summary>
@@ -142,7 +143,7 @@ scripts/e2e.sh        # end-to-end: the real app against a fake home folder
 
 `scripts/e2e.sh` drives the built app the way the agents and you would (transcripts, hook requests, the switcher, deck and alert) without touching your own agents or settings; `--soak [minutes]` checks CPU and memory under load, and `--ui` replays real keystrokes and clicks (it takes over the keyboard while it runs).
 
-`scripts/release.sh <version>` builds a universal, signed and notarized DMG, and `scripts/site.sh deploy` publishes [agentmuster.app](https://agentmuster.app) to Cloudflare. `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` regenerate the screenshots, the video and the welcome tour from demo mode (`Muster --demo`).
+`scripts/release.sh <version>` builds a universal, signed and notarized DMG and writes its GitHub release notes from [CHANGELOG.md](CHANGELOG.md), and `scripts/site.sh deploy` publishes [agentmuster.app](https://agentmuster.app) and its changelog page to Cloudflare. `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` regenerate the screenshots, the video and the welcome tour from demo mode (`Muster --demo`).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

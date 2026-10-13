@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SQLite3
 
@@ -752,6 +753,62 @@ let strays = (fm.enumerator(atPath: root + "/edits")?.allObjects as? [String] ??
     return name.hasPrefix(".") && name.contains(".muster-")
 }
 check(strays.isEmpty, "no half-written files are left behind")
+
+print("Changelog")
+let sample = """
+# Changelog
+
+An intro that isn't a release.
+
+## 2.0.0 · Unreleased
+
+A headline that
+wraps.
+
+- <!-- star --> **First thing.** Does a `thing`
+  across two lines.
+- **No symbol?** Still an item.
+
+**Note:** do this once.
+
+## 1.9.0 — 2026-09-01
+
+Older.
+
+- <!-- leaf --> **Old.** Body.
+"""
+let parsed = Changelog.parse(sample)
+check(parsed.map(\.version) == ["2.0.0", "1.9.0"], "releases are read in order, the intro skipped")
+check(parsed.first?.date == nil && parsed.last?.date.map(Changelog.day.string) == "2026-09-01", "an unreleased entry has no date; a dated one keeps its day")
+check(parsed.first?.headline == "A headline that wraps.", "the headline is the first paragraph")
+check(parsed.first?.items.first == Release.Item(symbol: "star", title: "First thing", body: "Does a `thing` across two lines."),
+      "an item has its symbol, its title without the period and its wrapped body")
+check(parsed.first?.items.last?.symbol == Changelog.defaultSymbol && parsed.first?.items.last?.title == "No symbol?",
+      "an item without a symbol gets the default")
+check(parsed.first?.notes == ["**Note:** do this once."], "paragraphs after the items are notes")
+check(parsed.first?.shortVersion == "2.0" && Release(version: "1.2.3", date: nil).shortVersion == "1.2.3", "x.y.0 reads as x.y")
+check(Changelog.newer("1.10.0", than: "1.9.9") && Changelog.same("1.2", "1.2.0"), "versions compare by number")
+
+let notesFor = [Release(version: "1.2.0", date: nil), Release(version: "1.1.0", date: now)]
+check(Changelog.afterUpdate(to: "1.2.0", seen: nil, launchedBefore: false, in: notesFor) == nil, "a first launch gets the tour, not What's New")
+check(Changelog.afterUpdate(to: "1.2.0", seen: nil, launchedBefore: true, in: notesFor)?.version == "1.2.0",
+      "an update from 1.1, which kept no record, shows the new notes")
+check(Changelog.afterUpdate(to: "1.2.0", seen: "1.2.0", launchedBefore: true, in: notesFor) == nil, "…once")
+check(Changelog.afterUpdate(to: "1.1.0", seen: "1.2.0", launchedBefore: true, in: notesFor) == nil, "going back a version shows nothing")
+check(Changelog.afterUpdate(to: "1.3.0", seen: "1.2.0", launchedBefore: true, in: notesFor) == nil, "a version without notes shows nothing")
+check(Changelog.current("1.2.1", in: notesFor)?.version == "1.1.0", "the menu falls back to the newest released notes")
+
+let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+let shipped = Changelog.parse((try? String(contentsOf: repo.appendingPathComponent("CHANGELOG.md"), encoding: .utf8)) ?? "")
+check(!shipped.isEmpty && zip(shipped, shipped.dropFirst()).allSatisfy { Changelog.newer($0.version, than: $1.version) },
+      "CHANGELOG.md lists releases newest first")
+check(shipped.dropFirst().allSatisfy { $0.date != nil }, "only the newest entry may be unreleased")
+check(shipped.allSatisfy { !$0.headline.isEmpty && !$0.items.isEmpty && $0.items.allSatisfy { !$0.title.isEmpty && !$0.body.isEmpty } },
+      "every release has a headline and titled items")
+let missingSymbols = shipped.flatMap(\.items).map(\.symbol).filter { NSImage(systemSymbolName: $0, accessibilityDescription: nil) == nil }
+check(missingSymbols.isEmpty, "every symbol in CHANGELOG.md exists" + (missingSymbols.isEmpty ? "" : ": " + missingSymbols.joined(separator: ", ")))
+let building = (NSDictionary(contentsOf: repo.appendingPathComponent("Resources/Info.plist")) as? [String: Any])?["CFBundleShortVersionString"] as? String ?? "?"
+check(shipped.contains { Changelog.same($0.version, building) }, "the version being built (\(building)) has a CHANGELOG.md entry")
 
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")

@@ -92,6 +92,9 @@ final class StatusItem: NSObject {
             if !Hotkeys.shared.conflicts.isEmpty { menu.addItem(.separator()) }
             menu.addItem(withTitle: "About Muster", action: #selector(about), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Welcome Tour…", action: #selector(tour), keyEquivalent: "").target = self
+            if WhatsNew.shared.available {
+                menu.addItem(withTitle: "What's New…", action: #selector(whatsNew), keyEquivalent: "").target = self
+            }
             menu.addItem(withTitle: "Check for Updates…", action: #selector(checkUpdates), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Usage…", action: #selector(usage), keyEquivalent: "").target = self
             menu.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
@@ -109,6 +112,7 @@ final class StatusItem: NSObject {
     @objc private func settings() { onSettings?() }
     @objc private func usage() { onUsage?() }
     @objc private func tour() { onTour?() }
+    @objc private func whatsNew() { WhatsNew.shared.show() }
     @objc private func checkUpdates() { Updates.check(manual: true) }
 
     /// After the tour: point at the icon, or explain where Muster went if the
@@ -381,11 +385,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !E2E.on && !UserDefaults.standard.bool(forKey: "launched") && (!Store.demo || CommandLine.arguments.contains("--welcome")) {
             welcome.show()
         }
+        WhatsNew.shared.showIfUpdated()
     }
 }
 
 extension AppDelegate {
-    /// muster://search, muster://settings, muster://usage, muster://welcome, muster://next (the most
+    /// muster://search, muster://settings, muster://usage, muster://welcome, muster://whats-new, muster://next (the most
     /// urgent session), muster://open?id=claude:<session id>. For Raycast, Alfred and Shortcuts.
     @objc func handleURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let text = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
@@ -395,6 +400,7 @@ extension AppDelegate {
         case "settings": settings.show()
         case "usage": settings.showUsage()
         case "welcome": welcome.show()
+        case "whats-new": WhatsNew.shared.show()
         case "next": if let s = Store.shared.sessions.first { Opener.open(s) }
         case "open":
             let id = url.queryItems?.first { $0.name == "id" }?.value

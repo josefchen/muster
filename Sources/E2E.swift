@@ -363,6 +363,7 @@ enum E2E {
                 "arch": arch, "hookPort": Int(Prompts.port), "sessions": sessions, "prompts": prompts, "sources": sources,
                 "hooks": ["claude": HookInstaller.isInstalled(.claude), "codex": HookInstaller.isInstalled(.codex)],
                 "panels": ["switcher": info("switcher"), "deck": info("deck"), "alert": info("alert")],
+                "whatsNew": WhatsNew.shared.showing ?? NSNull(),
                 "conflicts": Hotkeys.shared.conflicts.sorted(), "opened": opened]
     }
 

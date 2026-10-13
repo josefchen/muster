@@ -37,7 +37,7 @@ enum Updates {
                     return
                 }
                 let available = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-                guard newer(available, than: version) else {
+                guard Changelog.newer(available, than: version) else {
                     if manual { tell("You're up to date", "Muster \(version) is the latest version.") }
                     return
                 }
@@ -47,19 +47,10 @@ enum Updates {
         }.resume()
     }
 
-    static func newer(_ a: String, than b: String) -> Bool {
-        let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
-        for i in 0..<max(x.count, y.count) {
-            let l = i < x.count ? x[i] : 0, r = i < y.count ? y[i] : 0
-            if l != r { return l > r }
-        }
-        return false
-    }
-
     private static func offer(_ available: String, notes: String) {
         let alert = NSAlert()
         alert.messageText = "Muster \(available) is available"
-        let summary = notes.split(separator: "\n").prefix(6).joined(separator: "\n")
+        let summary = plain(notes, version: available)
         alert.informativeText = (summary.isEmpty ? "" : summary + "\n\n")
             + "You have \(version). Installed with Homebrew? Run brew upgrade --cask muster."
         alert.addButton(withTitle: "Download")
@@ -74,6 +65,19 @@ enum Updates {
         default:
             break
         }
+    }
+
+    /// The release notes' headline and first items as plain lines: an alert shows
+    /// Markdown as typed, and already says which version and how to install it.
+    private static func plain(_ notes: String, version: String) -> String {
+        let lead = "Muster \(version.hasSuffix(".0") ? String(version.dropLast(2)) : version). "
+        return notes.split(separator: "\n").compactMap { line -> String? in
+            var s = line.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "`", with: "")
+            if s.hasPrefix("Install:") { return nil }
+            if s.hasPrefix(lead) { s.removeFirst(lead.count) }
+            if s.hasPrefix("- ") { s = "• " + s.dropFirst(2) }
+            return s
+        }.prefix(5).joined(separator: "\n")
     }
 
     private static func tell(_ title: String, _ text: String) {

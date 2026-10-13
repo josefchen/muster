@@ -626,6 +626,7 @@ struct State {
     func items(_ name: String) -> [String] { panel(name)["items"] as? [String] ?? [] }
     func selected(_ name: String) -> Int? { panel(name)["selected"] as? Int }
     var alertSession: String? { panel("alert")["session"] as? String }
+    var whatsNew: String? { raw["whatsNew"] as? String }
     func source(_ agent: String) -> String? { (raw["sources"] as? [String: String])?[agent] }
     var hookPort: UInt16 { UInt16(raw["hookPort"] as? Int ?? 0) }
     func hooks(_ agent: String) -> Bool { (raw["hooks"] as? [String: Bool])?[agent] == true }
@@ -655,6 +656,7 @@ final class App {
 
     var pid: pid_t { process?.processIdentifier ?? 0 }
     var alive: Bool { process?.isRunning == true }
+    var version: String { (NSDictionary(contentsOfFile: bundle + "/Contents/Info.plist") as? [String: Any])?["CFBundleShortVersionString"] as? String ?? "" }
 
     init(bundle: String, fixture: Fixture) {
         self.bundle = bundle

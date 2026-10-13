@@ -203,6 +203,7 @@ final class Headless {
               "each source reports what it found")
         check(now?.prompts.isEmpty == true && !["switcher", "deck", "alert"].contains { now?.visible($0) == true },
               "nothing is held and no panel is up at rest")
+        check(now?.whatsNew == app.version, "an update from 1.1 opens What's New for \(app.version)", "showing \(now?.whatsNew ?? "nothing")")
     }
 
     // MARK: installing hooks
@@ -818,6 +819,9 @@ final class Headless {
         let stable = before.sessions.filter { ["done", "idle"].contains($0["status"] as? String ?? "") && $0["promptID"] is NSNull }
         guard app.launch() else { return check(false, "the app relaunches") }
         expect(app, "relaunched: nothing is held over") { $0.prompts.isEmpty }
+        check(app.state()?.whatsNew == nil, "relaunched: What's New doesn't open a second time")
+        app.post("/open", ["url": "muster://whats-new"])
+        expect(app, "…but muster://whats-new opens it") { $0.whatsNew == self.app.version }
         expect(app, "relaunched: finished sessions come back as they were, read or unread", within: 5) { s in
             stable.allSatisfy { old in
                 let id = old["id"] as? String ?? ""
