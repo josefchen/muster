@@ -82,7 +82,10 @@ Most urgent first. Let go to land in its window, or the terminal it runs in.
 </p>
 
 <p align="center">
-  <img src="docs/media/hero.gif" width="640" alt="Hold ⌥ and tap Tab to move through sessions, most urgent first">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/switcher-dark.gif">
+    <img src="docs/media/switcher-light.gif" width="640" alt="Hold ⌥ and tap Tab to move through sessions, most urgent first, then ⌥↩ answers the one waiting">
+  </picture>
 </p>
 
 <p align="center">
@@ -184,7 +187,7 @@ scripts/e2e.sh        # end-to-end: the real app against a fake home folder
 
 `scripts/e2e.sh` drives the built app the way the agents and you would (transcripts, hook requests, the switcher, deck and alert) without touching your own agents or settings; `--soak [minutes]` checks CPU and memory under load, and `--ui` replays real keystrokes and clicks (it takes over the keyboard while it runs).
 
-`scripts/release.sh <version>` builds a universal, signed and notarized DMG and writes its GitHub release notes from [CHANGELOG.md](CHANGELOG.md), and `scripts/site.sh deploy` publishes [agentmuster.app](https://agentmuster.app) and its changelog page to Cloudflare. `scripts/capture.sh`, `scripts/record.sh`, `scripts/record-answer.sh` and `scripts/tour.sh` regenerate the screenshots, the videos and the welcome tour from demo mode (`Muster --demo`); `record-answer.sh` needs only Screen Recording, since Muster plays that scene itself.
+`scripts/release.sh <version>` builds a universal, signed and notarized DMG and writes its GitHub release notes from [CHANGELOG.md](CHANGELOG.md), and `scripts/site.sh deploy` publishes [agentmuster.app](https://agentmuster.app) and its changelog page to Cloudflare. `scripts/capture-stills.sh`, `scripts/record-scene.sh`, `scripts/record-answer.sh` and `scripts/tour.sh` regenerate the screenshots, the videos and the welcome tour from demo mode (`Muster --demo`). Muster opens and plays each scene itself, so they need Screen Recording and nothing else.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 

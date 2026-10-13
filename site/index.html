@@ -27,7 +27,7 @@
  "installUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg",
  "softwareVersion": "1.2.0", "releaseNotes": "https://agentmuster.app/changelog", "fileSize": "2 MB",
  "image": "https://agentmuster.app/media/social-preview.png",
- "screenshot": ["https://agentmuster.app/media/hero-poster.jpg", "https://agentmuster.app/media/alert.jpg", "https://agentmuster.app/media/peek-light.jpg", "https://agentmuster.app/media/appearance.jpg"],
+ "screenshot": ["https://agentmuster.app/media/alert-dark.jpg", "https://agentmuster.app/media/peek-light.jpg", "https://agentmuster.app/media/switcher-dark.jpg", "https://agentmuster.app/media/appearance.jpg"],
  "featureList": ["See which Claude Code, Codex or Cursor session needs you", "Allow or deny a command from an alert without switching apps",
                  "See the agent's reason, the whole command or every option with Option-Down", "Switch to any session with Option-Tab", "Search sessions from the last three hours", "Tokens and API-rate cost per session"],
  "isAccessibleForFree": true, "license": "https://opensource.org/licenses/MIT",
@@ -440,7 +440,7 @@
   <div class="frame">
     <picture>
       <source srcset="/media/peek-dark.jpg" media="(prefers-color-scheme: dark)">
-      <img src="/media/peek-light.jpg" width="1280" height="500" loading="lazy"
+      <img src="/media/peek-light.jpg" width="1240" height="530" loading="lazy"
            alt="Muster's alert unfolded on a question from Claude Code: three options, each with the agent's note, answered with Option-1 to Option-3">
     </picture>
   </div>
@@ -452,10 +452,12 @@
   <p>Hold ⌥ and tap Tab. Every session is there, the one waiting on you first. Let go and you're in its window, or the terminal it runs in.</p>
   <div class="stage">
     <div class="frame">
-      <video autoplay muted loop playsinline preload="none" poster="/media/hero-poster.jpg" width="1200" height="1062"
-             aria-label="Holding Option and tapping Tab moves through sessions, most urgent first">
-        <source src="/media/hero.webm" type="video/webm">
-        <source src="/media/hero.mp4" type="video/mp4">
+      <video autoplay muted loop playsinline preload="none" poster="/media/switcher-dark-poster.jpg" data-light-poster="/media/switcher-light-poster.jpg"
+             width="1200" height="1250" aria-label="Holding Option and tapping Tab moves through sessions, most urgent first, then Option-Return answers the one waiting">
+        <source src="/media/switcher-light.webm" type="video/webm" media="(prefers-color-scheme: light)">
+        <source src="/media/switcher-light.mp4" type="video/mp4" media="(prefers-color-scheme: light)">
+        <source src="/media/switcher-dark.webm" type="video/webm">
+        <source src="/media/switcher-dark.mp4" type="video/mp4">
       </video>
     </div>
   </div>
@@ -476,10 +478,12 @@
     <p>Each one shows its tokens and what they would cost at API list prices. On a Max or Pro plan you don't pay that, but it tells you which sessions are the expensive ones.</p>
   </div>
   <div class="frame">
-    <video autoplay muted loop playsinline preload="none" poster="/media/search-poster.jpg" width="1200" height="1132"
-           aria-label="Searching sessions by typing rust">
-      <source src="/media/search.webm" type="video/webm">
-      <source src="/media/search.mp4" type="video/mp4">
+    <video autoplay muted loop playsinline preload="none" poster="/media/search-dark-poster.jpg" data-light-poster="/media/search-light-poster.jpg"
+           width="1200" height="1314" aria-label="Control-Option-Space opens search, and typing rust narrows the list">
+      <source src="/media/search-light.webm" type="video/webm" media="(prefers-color-scheme: light)">
+      <source src="/media/search-light.mp4" type="video/mp4" media="(prefers-color-scheme: light)">
+      <source src="/media/search-dark.webm" type="video/webm">
+      <source src="/media/search-dark.mp4" type="video/mp4">
     </video>
   </div>
 </section>
@@ -488,7 +492,7 @@
   <div class="reveal">
     <h2>Made for the Mac.</h2>
     <p>Muster is a native AppKit app and a 2 MB download. It uses the system's own glass and follows your light or dark appearance.</p>
-    <div class="appearance"><img src="/media/appearance.jpg" width="1400" height="1160" alt="The switcher, half in dark mode and half in light mode" loading="lazy"></div>
+    <div class="appearance"><img src="/media/appearance.jpg" width="1440" height="1264" alt="The switcher, half in dark mode and half in light mode" loading="lazy"></div>
   </div>
   <div class="details reveal">
     <div><h3>Opens the right window</h3><p>Claude's app, the Codex thread, Cursor's Agents window, or the terminal a CLI session runs in.</p></div>
@@ -526,7 +530,7 @@
 
 <section class="wrap center reveal oss" id="open-source">
   <h2>Open source, because<br>it can say yes for you.</h2>
-  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed, and every release passes 212 end-to-end tests that drive the real app before it ships.</p>
+  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed, and every release passes 213 end-to-end tests that drive the real app before it ships.</p>
   <a class="ghost" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Read the code on GitHub</a>
 </section>
 
@@ -575,7 +579,13 @@
     if (still) { v.pause(); return; }
     if (e.isIntersecting) { v.preload = 'auto'; v.play().catch(() => {}); } else v.pause();
   }), { threshold: .2 });
-  document.querySelectorAll('video').forEach(v => { if (still) v.removeAttribute('autoplay'); vio.observe(v); });
+  // Each video comes in the page's appearance; so does the still shown before it plays.
+  const light = matchMedia('(prefers-color-scheme: light)').matches;
+  document.querySelectorAll('video').forEach(v => {
+    if (light && v.dataset.lightPoster) v.poster = v.dataset.lightPoster;
+    if (still) v.removeAttribute('autoplay');
+    vio.observe(v);
+  });
 
   document.querySelectorAll('[data-copy]').forEach(b => b.addEventListener('click', () => {
     navigator.clipboard.writeText(b.dataset.copy).then(() => {
