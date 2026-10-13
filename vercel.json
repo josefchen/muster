@@ -2,5 +2,8 @@
   "framework": null,
   "buildCommand": "",
   "outputDirectory": "site",
-  "redirects": [{ "source": "/:path*", "destination": "https://agentmuster.app/:path*", "permanent": true }]
+  "redirects": [
+    { "source": "/", "destination": "https://agentmuster.app/", "permanent": true },
+    { "source": "/:path+", "destination": "https://agentmuster.app/:path+", "permanent": true }
+  ]
 }
