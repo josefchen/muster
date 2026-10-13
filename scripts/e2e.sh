@@ -81,7 +81,7 @@ drive() { TMPDIR="$WORK/tmp/" "$WORK/driver" "$@"; }
 rosetta() { [ "$ROSETTA" = 1 ] && [ "$HOST" = arm64 ] && /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; }
 
 if [ "$MODE" = export ]; then
-  echo "Building a universal Muster and e2e driver into $EXPORT…"
+  echo "Building a universal Muster and e2e driver into ${EXPORT}…"
   mkdir -p "$EXPORT"
   ARM="$(build_app arm64)"
   X86="$(build_app x86_64)"
@@ -98,7 +98,7 @@ if [ "$MODE" = export ]; then
 fi
 
 if [ -n "$PREBUILT" ]; then
-  echo "Using the prebuilt app and driver from $PREBUILT ($HOST, macOS $(sw_vers -productVersion))…"
+  echo "Using the prebuilt app and driver from ${PREBUILT} (${HOST}, macOS $(sw_vers -productVersion))…"
   mkdir -p "$WORK/$HOST"
   ditto "$PREBUILT/MusterE2E.app" "$WORK/$HOST/MusterE2E.app"
   APP="$WORK/$HOST/MusterE2E.app"
