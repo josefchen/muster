@@ -131,11 +131,16 @@ enum Changelog {
     /// record of what they've seen came from it or earlier.
     static let firstWithoutWhatsNew = "1.1.0"
 
-    /// The notes to show once after an update: the running version's own, if you
-    /// used an earlier version. A first launch gets the tour instead.
+    /// The notes to show once after an update: the running version's, followed by anything
+    /// from releases you skipped since the one you last saw. A first launch gets the tour instead.
     static func afterUpdate(to version: String, seen: String?, launchedBefore: Bool, in releases: [Release]) -> Release? {
-        guard launchedBefore, newer(version, than: seen ?? firstWithoutWhatsNew) else { return nil }
-        return releases.first { same($0.version, version) }
+        let since = seen ?? firstWithoutWhatsNew
+        guard launchedBefore, newer(version, than: since), var notes = releases.first(where: { same($0.version, version) }) else { return nil }
+        for skipped in releases where newer(skipped.version, than: since) && newer(version, than: skipped.version) {
+            notes.items += skipped.items.filter { item in !notes.items.contains { $0.title == item.title } }
+            notes.notes += skipped.notes
+        }
+        return notes
     }
 
     /// For the menu item: this version's notes, or else the newest release before it.

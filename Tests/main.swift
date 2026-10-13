@@ -797,6 +797,12 @@ check(Changelog.afterUpdate(to: "1.2.0", seen: "1.2.0", launchedBefore: true, in
 check(Changelog.afterUpdate(to: "1.1.0", seen: "1.2.0", launchedBefore: true, in: notesFor) == nil, "going back a version shows nothing")
 check(Changelog.afterUpdate(to: "1.3.0", seen: "1.2.0", launchedBefore: true, in: notesFor) == nil, "a version without notes shows nothing")
 check(Changelog.current("1.2.1", in: notesFor)?.version == "1.1.0", "the menu falls back to the newest released notes")
+let chain = [Release(version: "1.2.1", date: now, headline: "Patch", items: [Release.Item(symbol: "a", title: "Fix", body: ".")]),
+             Release(version: "1.2.0", date: now, headline: "Big", items: [Release.Item(symbol: "b", title: "Feature", body: ".")], notes: ["Do this."]),
+             Release(version: "1.1.0", date: now, headline: "Old", items: [Release.Item(symbol: "c", title: "Old thing", body: ".")])]
+let skipped = Changelog.afterUpdate(to: "1.2.1", seen: "1.1.0", launchedBefore: true, in: chain)
+check(skipped?.version == "1.2.1" && skipped?.items.map(\.title) == ["Fix", "Feature"] && skipped?.notes == ["Do this."],
+      "skipping a release shows its changes too, newest first, and nothing you'd already seen")
 
 let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
 let shipped = Changelog.parse((try? String(contentsOf: repo.appendingPathComponent("CHANGELOG.md"), encoding: .utf8)) ?? "")
