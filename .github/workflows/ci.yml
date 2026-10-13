@@ -19,3 +19,28 @@ jobs:
         run: scripts/e2e.sh --soak 2
         env:
           MUSTER_SOAK_CPU_LIMIT: "3"
+      # Only macOS 26's SDK compiles Muster (it uses Liquid Glass when it's there), so the
+      # other Macs below test this one universal build rather than building their own.
+      - name: Build for other Macs
+        run: scripts/e2e.sh --export dist && tar -czf e2e.tgz dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: e2e
+          path: e2e.tgz
+          retention-days: 3
+
+  # The same suite on every macOS Muster supports, on Apple silicon and on Intel.
+  other-macs:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15, macos-15-intel, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v8
+        with:
+          name: e2e
+      - name: End-to-end
+        run: tar -xzf e2e.tgz && scripts/e2e.sh --prebuilt dist

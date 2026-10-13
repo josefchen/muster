@@ -10,6 +10,10 @@
 #                                 MUSTER_SOAK_CPU_LIMIT overrides the 1.5 % average CPU limit
 #   scripts/e2e.sh --ui           real keystrokes and clicks; see below
 #   scripts/e2e.sh --build-only   compile everything, run nothing
+#   scripts/e2e.sh --export <dir> compile a universal app and driver into <dir>, run nothing
+#   scripts/e2e.sh --prebuilt <dir>  headless suite with what --export made, compiling nothing:
+#                                 how CI tests one build on older macOS and on Intel Macs, whose
+#                                 SDKs can't compile it
 #
 # --ui posts real key and mouse events, so it takes over your keyboard, pointer
 # and screen while it runs. It needs Accessibility for the terminal (to post events
@@ -21,14 +25,18 @@ MODE=headless
 MINUTES=10
 ROSETTA=1
 BASELINES=""
+EXPORT=""
+PREBUILT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --soak) MODE=soak; if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then MINUTES="$2"; shift; fi ;;
     --ui) MODE=ui ;;
     --baselines) BASELINES="${2:?--baselines needs a folder}"; shift ;;
     --build-only) MODE=build ;;
+    --export) MODE=export; EXPORT="${2:?--export needs a folder}"; shift ;;
+    --prebuilt) PREBUILT="${2:?--prebuilt needs a folder}"; shift ;;
     --no-rosetta) ROSETTA=0 ;;
-    *) echo "usage: scripts/e2e.sh [--soak [minutes]] [--ui [--baselines dir]] [--build-only] [--no-rosetta]" >&2; exit 64 ;;
+    *) echo "usage: scripts/e2e.sh [--soak [minutes]] [--ui [--baselines dir]] [--build-only] [--export dir] [--prebuilt dir] [--no-rosetta]" >&2; exit 64 ;;
   esac
   shift
 done
@@ -72,9 +80,35 @@ drive() { TMPDIR="$WORK/tmp/" "$WORK/driver" "$@"; }
 
 rosetta() { [ "$ROSETTA" = 1 ] && [ "$HOST" = arm64 ] && /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; }
 
-echo "Building Muster and the e2e driver ($HOST)…"
-APP="$(build_app "$HOST")"
-swiftc -O -swift-version 5 -target "$HOST-apple-macos14" -o "$WORK/driver" "$HERE"/Tests/e2e/*.swift
+if [ "$MODE" = export ]; then
+  echo "Building a universal Muster and e2e driver into $EXPORT…"
+  mkdir -p "$EXPORT"
+  ARM="$(build_app arm64)"
+  X86="$(build_app x86_64)"
+  rm -rf "$EXPORT/MusterE2E.app"
+  ditto "$ARM" "$EXPORT/MusterE2E.app"
+  lipo -create "$ARM/Contents/MacOS/MusterE2E" "$X86/Contents/MacOS/MusterE2E" -output "$EXPORT/MusterE2E.app/Contents/MacOS/MusterE2E"
+  codesign --force --sign - "$EXPORT/MusterE2E.app" >/dev/null 2>&1
+  for arch in arm64 x86_64; do
+    swiftc -O -swift-version 5 -target "$arch-apple-macos14" -o "$WORK/driver-$arch" "$HERE"/Tests/e2e/*.swift
+  done
+  lipo -create "$WORK/driver-arm64" "$WORK/driver-x86_64" -output "$EXPORT/driver"
+  echo "Exported."
+  exit 0
+fi
+
+if [ -n "$PREBUILT" ]; then
+  echo "Using the prebuilt app and driver from $PREBUILT ($HOST, macOS $(sw_vers -productVersion))…"
+  mkdir -p "$WORK/$HOST"
+  ditto "$PREBUILT/MusterE2E.app" "$WORK/$HOST/MusterE2E.app"
+  APP="$WORK/$HOST/MusterE2E.app"
+  cp "$PREBUILT/driver" "$WORK/driver"
+  ROSETTA=0
+else
+  echo "Building Muster and the e2e driver ($HOST)…"
+  APP="$(build_app "$HOST")"
+  swiftc -O -swift-version 5 -target "$HOST-apple-macos14" -o "$WORK/driver" "$HERE"/Tests/e2e/*.swift
+fi
 
 case "$MODE" in
   build)
@@ -83,7 +117,7 @@ case "$MODE" in
     ;;
   headless)
     status=0
-    drive headless --app "$APP" --label "$HOST" || status=1
+    drive headless --app "$APP" --label "$HOST, macOS $(sw_vers -productVersion)" || status=1
     if rosetta; then
       echo
       echo "Building for x86_64…"
