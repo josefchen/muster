@@ -1,0 +1,3 @@
+# The website and its build tools are documentation, so GitHub counts Muster as the Swift app it is.
+site/** linguist-documentation
+Resources/dmg/** linguist-documentation
