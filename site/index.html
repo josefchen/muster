@@ -3,9 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Muster: every agent, one glance</title>
-<meta name="description" content="A Mac menu bar app that shows which Claude, Codex or Cursor session needs you and takes you to it with ⌥Tab. Free and open source.">
+<title>Muster: a Mac menu bar app for Claude Code, Codex and Cursor</title>
+<meta name="description" content="Free, open-source Mac menu bar app. See when Claude Code, Codex or Cursor needs you, allow a command without switching apps, and jump to any session with ⌥Tab.">
 <link rel="canonical" href="https://agentmuster.app/">
+<meta name="google-site-verification" content="Y_4bOEjHO_RJ9XxiLro5gV8HGAuE-tlDMG2JFwKt874">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Muster">
 <meta property="og:url" content="https://agentmuster.app/">
@@ -20,10 +21,18 @@
 <link rel="apple-touch-icon" href="/media/icon.png">
 <script type="application/ld+json">
 {"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "Muster",
- "description": "A Mac menu bar app that shows which Claude, Codex or Cursor session needs you and takes you to it with ⌥Tab.",
- "applicationCategory": "DeveloperApplication", "operatingSystem": "macOS 14 or later", "url": "https://agentmuster.app/",
- "downloadUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg", "softwareVersion": "1.2.0",
- "license": "https://opensource.org/licenses/MIT", "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
+ "description": "A Mac menu bar app that shows which Claude Code, Codex or Cursor session needs you, lets you allow a command without switching apps, and takes you to any session with ⌥Tab.",
+ "applicationCategory": "DeveloperApplication", "applicationSubCategory": "Productivity", "operatingSystem": "macOS 14 or later",
+ "url": "https://agentmuster.app/", "downloadUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg",
+ "installUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg",
+ "softwareVersion": "1.2.0", "releaseNotes": "https://agentmuster.app/changelog", "fileSize": "2 MB",
+ "image": "https://agentmuster.app/media/social-preview.png",
+ "screenshot": ["https://agentmuster.app/media/hero-poster.jpg", "https://agentmuster.app/media/alert.jpg", "https://agentmuster.app/media/appearance.jpg"],
+ "featureList": ["See which Claude Code, Codex or Cursor session needs you", "Allow or deny a command from an alert without switching apps",
+                 "Switch to any session with Option-Tab", "Search sessions from the last three hours", "Tokens and API-rate cost per session"],
+ "isAccessibleForFree": true, "license": "https://opensource.org/licenses/MIT",
+ "codeRepository": "https://github.com/josefchen/muster", "sameAs": ["https://github.com/josefchen/muster"],
+ "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"}}
 </script>
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#08080b" media="(prefers-color-scheme: dark)">
@@ -151,6 +160,11 @@
   .app { display: grid; justify-items: center; gap: 12px; font-weight: 600; font-size: 15px; }
   .app img { width: 84px; height: 84px; filter: drop-shadow(0 14px 24px rgba(0,0,0,.25)); }
 
+  .faq { display: grid; grid-template-columns: 1fr 1fr; gap: 36px 56px; margin: 64px auto 0; max-width: 900px; text-align: left; }
+  .faq h3 { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+  .faq p { margin: 6px 0 0; max-width: none; color: var(--dim); font-size: 15px; line-height: 1.5; }
+  .faq a { color: var(--fg); text-decoration: underline; text-decoration-color: var(--wire); text-underline-offset: 3px; }
+  .faq a:hover { text-decoration-color: var(--fg); }
   .closer { text-align: center; padding: 168px 0 128px; }
   .closer .icon { width: 72px; height: 72px; margin-bottom: 26px; }
   .closer h2 { font-size: clamp(36px, 5.4vw, 60px); }
@@ -181,6 +195,7 @@
     .brew em { display: none; }
     .alert, .appearance { border-radius: 16px; }
     .details { grid-template-columns: 1fr; }
+    .faq { grid-template-columns: 1fr; gap: 26px; margin-top: 44px; }
     .diagram { padding: 40px 16px 28px; }
     .agents { grid-auto-flow: row; }
   }
@@ -206,7 +221,7 @@
 <header><div class="wrap">
   <img class="icon" src="/media/icon.png" alt="Muster">
   <h1>Every agent,<br><span>one glance.</span></h1>
-  <p class="lede">Muster watches your Claude, Codex and Cursor sessions from the menu bar and tells you which one is waiting on you.</p>
+  <p class="lede">Muster watches your Claude Code, Codex and Cursor sessions from the menu bar and tells you which one is waiting on you.</p>
   <div class="ctas">
     <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">
       <svg viewBox="0 0 17 20" fill="currentColor" aria-hidden="true"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
@@ -293,6 +308,20 @@
   </div>
 </section>
 
+<section class="wrap center reveal" id="questions">
+  <h2>Questions.</h2>
+  <div class="faq">
+    <div><h3>How do I know when Claude Code needs me?</h3><p>Muster counts the sessions waiting on you in the menu bar and shows an alert at the top of your screen. To compare it with Claude Code's own options, read <a href="/guides/claude-code-notifications-mac">getting notified when Claude Code needs you</a>.</p></div>
+    <div><h3>Does it work with several sessions at once?</h3><p>Yes. Every Claude Code, Codex and Cursor session from the last three hours is in one list, with the one that needs you first.</p></div>
+    <div><h3>Is it free?</h3><p>Yes. Muster is open source under the MIT License, with no account.</p></div>
+    <div><h3>Does it send my code anywhere?</h3><p>No. It reads the session files your agents write and talks to them over 127.0.0.1. The only network request is an update check you can turn on.</p></div>
+    <div><h3>What if Muster quits while an agent is asking?</h3><p>The agent falls back to its own prompt, the same as without Muster.</p></div>
+    <div><h3>Can it answer Cursor's prompts?</h3><p>Not yet. Cursor's hooks can't step aside for prompts Cursor would approve itself, so Muster opens those in Cursor.</p></div>
+    <div><h3>Which Macs does it run on?</h3><p>macOS 14 or later, on Apple silicon and Intel.</p></div>
+    <div><h3>What's new?</h3><p>Every release is in the <a href="/changelog">changelog</a>. Muster also shows what changed after each update.</p></div>
+  </div>
+</section>
+
 <div class="closer"><div class="wrap reveal">
   <img class="icon" src="/media/icon.png" alt="">
   <h2>Run more agents<br>without losing track.</h2>
@@ -304,7 +333,7 @@
 
 <footer><div class="wrap">
   <span>Muster is an independent project, not affiliated with Anthropic, OpenAI or Anysphere.</span>
-  <span><a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
+  <span><a href="/changelog">Changelog</a> · <a href="/guides/claude-code-notifications-mac">Claude Code notifications</a> · <a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
 </div></footer>
 
 <script>

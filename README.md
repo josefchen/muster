@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Every agent, one glance.</b><br>
-  A native Mac switcher for your Claude, Codex and Cursor sessions.
+  A native Mac menu bar switcher for your Claude Code, Codex and Cursor sessions.
 </p>
 
 <p align="center">

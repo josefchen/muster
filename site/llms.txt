@@ -1,0 +1,26 @@
+# Muster
+
+> Muster is a free, open-source Mac menu bar app for people who run several AI coding agents at once. It shows which Claude Code, Codex or Cursor session is waiting on you, lets you allow or deny a command from an alert without switching apps, and jumps to any session with Option-Tab.
+
+- Website: https://agentmuster.app
+- Download (signed and notarized DMG): https://github.com/josefchen/muster/releases/latest/download/Muster.dmg
+- Homebrew: `brew install --cask josefchen/tap/muster`
+- Source code, MIT License: https://github.com/josefchen/muster
+- Requirements: macOS 14 or later, Apple silicon or Intel. Free, no account.
+
+## What it does
+
+- Counts the sessions waiting on you in the menu bar, and shows an alert at the top of the screen when one needs you.
+- Answers Claude Code and Codex permission prompts, questions and plan approvals from that alert (Option-Return allows, Option-Delete denies). If Muster isn't running, the agent asks the usual way.
+- Option-Tab opens a switcher ordered by urgency: waiting on you, working, then recently done. Letting go opens the session in Claude's app, the Codex thread, Cursor's Agents window, or the terminal a CLI session runs in.
+- Control-Option-Space searches every session from the last three hours, with tokens and an estimate of the cost at API list prices.
+- Sessions stopped by a usage limit or a sign-out don't count as needing you; they show when the limit resets.
+
+## How it works
+
+Muster reads the session files the agents already write on your Mac (Claude Code's transcripts, Codex's rollout files and thread database, Cursor's local database). Answering prompts uses each agent's own hooks, which call Muster on 127.0.0.1 with a per-install token. Nothing is sent anywhere; the only network request is an optional update check.
+
+## Pages
+
+- [Changelog](https://agentmuster.app/changelog): every release, newest first
+- [Get notified when Claude Code needs you on a Mac](https://agentmuster.app/guides/claude-code-notifications-mac): Claude Code's own notifications, the terminal bell, a Notification hook, and Muster, compared

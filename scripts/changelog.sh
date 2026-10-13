@@ -4,6 +4,7 @@
 #   scripts/changelog.sh notes 1.2.0             GitHub release notes; fails without a dated entry
 #   scripts/changelog.sh page site/changelog.html  the page with <!-- releases --> filled in
 #   scripts/changelog.sh feed                    an Atom feed of the released versions
+#   scripts/changelog.sh latest                  the newest released version and its date
 set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 BIN="$(mktemp -d)"

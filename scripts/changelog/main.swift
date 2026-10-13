@@ -124,6 +124,9 @@ case "page":
     print(page(template), terminator: "")
 case "feed":
     print(feed())
+case "latest":
+    guard let r = released.first else { fail("CHANGELOG.md has no released version") }
+    print(r.version, day(r))
 default:
     fail("unknown command \(args[1])")
 }

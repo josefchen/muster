@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to get notified when Claude Code needs you on a Mac</title>
+<meta name="description" content="Claude Code waits silently when it needs permission or finishes a task. Four ways to hear about it on a Mac: your terminal, the bell, a Notification hook, or Muster.">
+<link rel="canonical" href="https://agentmuster.app/guides/claude-code-notifications-mac">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Muster">
+<meta property="og:url" content="https://agentmuster.app/guides/claude-code-notifications-mac">
+<meta property="og:title" content="Get notified when Claude Code needs you on a Mac">
+<meta property="og:description" content="Four ways to hear about it: your terminal, the bell, a Notification hook, or a menu bar app.">
+<meta property="og:image" content="https://agentmuster.app/media/social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://agentmuster.app/media/social-preview.png">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#08080b" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/media/icon.png">
+<link rel="apple-touch-icon" href="/media/icon.png">
+<script type="application/ld+json">
+{"@context": "https://schema.org", "@type": "TechArticle",
+ "headline": "Get notified when Claude Code needs you on a Mac",
+ "description": "Four ways to hear when Claude Code waits for permission or finishes: your terminal, the bell, a Notification hook, or Muster.",
+ "datePublished": "2026-10-13", "dateModified": "2026-10-13",
+ "mainEntityOfPage": "https://agentmuster.app/guides/claude-code-notifications-mac",
+ "image": "https://agentmuster.app/media/social-preview.png",
+ "author": {"@type": "Organization", "name": "Muster", "url": "https://agentmuster.app/"},
+ "publisher": {"@type": "Organization", "name": "Muster", "url": "https://agentmuster.app/", "logo": "https://agentmuster.app/media/icon.png"},
+ "about": [{"@type": "SoftwareApplication", "name": "Claude Code"}, {"@type": "SoftwareApplication", "name": "Muster", "url": "https://agentmuster.app/"}]}
+</script>
+<link rel="stylesheet" href="/page.css">
+<style>
+  article { max-width: 720px; }
+  .meta { margin-top: 18px; font-size: 14px; color: var(--faint); }
+  article section { padding-top: 48px; }
+  article h2 { font-size: 28px; line-height: 1.2; letter-spacing: -.028em; font-weight: 700; }
+  article h2 span { color: var(--faint); font-weight: 600; margin-right: 6px; }
+  article h3 { margin-top: 28px; font-size: 19px; letter-spacing: -.015em; font-weight: 650; }
+  article p, article li { margin-top: 14px; color: var(--dim); font-size: 17px; line-height: 1.6; }
+  article p b, article li b { color: var(--fg); font-weight: 600; }
+  article ul { padding-left: 22px; }
+  article li { margin-top: 8px; }
+  article a.link { color: var(--fg); text-decoration: underline; text-decoration-color: var(--wire); text-underline-offset: 3px; }
+  article a.link:hover { text-decoration-color: var(--fg); }
+  pre { margin-top: 16px; padding: 16px 18px; border-radius: 14px; background: var(--code); border: 1px solid var(--line); overflow-x: auto; }
+  pre code { padding: 0; background: none; font-size: 13.5px; line-height: 1.6; white-space: pre; }
+  .code { position: relative; }
+  .code button { position: absolute; top: 10px; right: 10px; font: 600 12px/1 -apple-system, system-ui, sans-serif; color: var(--dim);
+                 background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; cursor: pointer; }
+  .code button:hover { color: var(--fg); border-color: var(--wire); }
+  .file { display: block; margin: 18px 0 -8px; font: 12.5px/1 ui-monospace, "SF Mono", Menlo, monospace; color: var(--faint); }
+  table { width: 100%; margin-top: 18px; border-collapse: collapse; font-size: 15px; }
+  th, td { text-align: left; vertical-align: top; padding: 11px 12px 11px 0; border-bottom: 1px solid var(--line); }
+  th { color: var(--faint); font-weight: 600; font-size: 13px; }
+  td { color: var(--dim); }
+  td:first-child { color: var(--fg); font-weight: 600; white-space: nowrap; }
+  .table { overflow-x: auto; }
+  .muster { margin-top: 22px; padding: 26px 26px 24px; border-radius: 22px; border: 1px solid var(--line); background: var(--glass); }
+  .muster ul { padding-left: 20px; }
+  .ctas { margin-top: 22px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .btn { display: inline-flex; align-items: center; background: var(--btn); color: var(--btn-fg); font-weight: 600;
+         padding: 11px 18px; border-radius: 12px; font-size: 15px; }
+  .btn:hover { background: var(--btn-hover); }
+  .ctas code { font-size: 13px; padding: 9px 11px; border-radius: 10px; }
+  .faq h3 { margin-top: 26px; }
+  .faq p { margin-top: 6px; }
+  .sources { margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 14px !important; color: var(--faint) !important; }
+  @media (max-width: 560px) {
+    article h2 { font-size: 24px; }
+    .muster { padding: 20px 18px; border-radius: 18px; }
+    td:first-child { white-space: normal; }
+  }
+</style>
+</head>
+<body>
+<nav><div class="wrap">
+  <a class="brand" href="/"><img src="/media/icon.png" alt="">Muster</a>
+  <div class="links">
+    <a href="/changelog">Changelog</a>
+    <a class="gh" href="https://github.com/josefchen/muster">GitHub</a>
+    <a class="pill" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download</a>
+  </div>
+</div></nav>
+
+<main class="wrap narrow">
+<article>
+  <div class="top">
+    <h1>Get notified when Claude Code needs you</h1>
+    <p class="lede">Claude Code pauses when it wants permission to run something, and again when it finishes. If you're in another window, nothing tells you. Here are four ways to fix that on a Mac, from a one-line setting to a menu bar app.</p>
+    <p class="meta">Updated <time datetime="2026-10-13">October 13, 2026</time></p>
+  </div>
+
+  <div class="table">
+  <table>
+    <thead><tr><th>Option</th><th>Works in</th><th>What you get</th><th>Setup</th></tr></thead>
+    <tbody>
+      <tr><td><a href="#terminal">Your terminal</a></td><td>Ghostty, Kitty, iTerm2</td><td>A macOS notification</td><td>None, or one switch in iTerm2</td></tr>
+      <tr><td><a href="#bell">Terminal bell</a></td><td>Any terminal</td><td>A sound</td><td>One setting</td></tr>
+      <tr><td><a href="#hook">Notification hook</a></td><td>Any terminal</td><td>A notification, or any command you choose</td><td>A few lines of JSON</td></tr>
+      <tr><td><a href="#muster">Muster</a></td><td>Any terminal, Claude's app, Codex and Cursor</td><td>An alert you can answer, and ⌥Tab to the session</td><td>Install an app</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <section id="terminal">
+    <h2><span>1</span>Let your terminal show it</h2>
+    <p>Claude Code sends a desktop notification by itself in <b>Ghostty</b>, <b>Kitty</b> and <b>iTerm2</b> when it finishes or waits for permission while you're away from the terminal.</p>
+    <ul>
+      <li><b>iTerm2</b> needs one switch: Settings → Profiles → Terminal, check "Notification Center Alerts", then under "Filter Alerts" turn on "Send escape sequence-generated alerts".</li>
+      <li><b>tmux</b> swallows these notifications unless you let them through. Add this to <code>~/.tmux.conf</code>, then run <code>tmux source-file ~/.tmux.conf</code>:</li>
+    </ul>
+    <pre><code>set -g allow-passthrough on</code></pre>
+    <p>Other terminals, including Apple's Terminal, Warp and the terminals inside VS Code and Cursor, don't get this notification. Use one of the options below.</p>
+  </section>
+
+  <section id="bell">
+    <h2><span>2</span>Ring the terminal bell</h2>
+    <p>This works in any terminal. It's only a sound, so it won't tell you which session rang.</p>
+    <span class="file">~/.claude/settings.json</span>
+    <pre><code>{
+  "preferredNotifChannel": "terminal_bell"
+}</code></pre>
+  </section>
+
+  <section id="hook">
+    <h2><span>3</span>Add a Notification hook</h2>
+    <p>A hook runs a command when something happens in Claude Code. This one shows a macOS notification when Claude Code waits for a permission (<code>permission_prompt</code>) or for your next message (<code>idle_prompt</code>):</p>
+    <span class="file">~/.claude/settings.json</span>
+    <pre><code>{
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "permission_prompt|idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Claude Code is waiting for you\" with title \"Claude Code\" sound name \"Glass\"'"
+          }
+        ]
+      }
+    ]
+  }
+}</code></pre>
+    <ul>
+      <li>If your settings already have a <code>"hooks"</code> section, add <code>"Notification"</code> inside it rather than replacing it.</li>
+      <li>To hear only about permission requests, set the matcher to <code>permission_prompt</code>. To hear every time Claude finishes a reply, add the same command as a <code>Stop</code> hook, which takes no matcher.</li>
+      <li>macOS may list these notifications under Script Editor. If none appear, allow Script Editor in System Settings → Notifications.</li>
+    </ul>
+  </section>
+
+  <section id="muster">
+    <h2><span>4</span>Use Muster</h2>
+    <p>A notification says that something happened. With several sessions running, you still have to find out which one, and switch to it to answer. Muster is a free menu bar app built for that.</p>
+    <div class="muster">
+      <ul>
+        <li><b>See who needs you.</b> A count in the menu bar, and an alert at the top of the screen when any session waits on you, whether it's Claude Code in a terminal, Claude's desktop app, Codex or Cursor.</li>
+        <li><b>Answer from where you are.</b> <kbd>⌥</kbd><kbd>↩</kbd> allows a command and <kbd>⌥</kbd><kbd>⌫</kbd> denies it, using Claude Code's <code>PermissionRequest</code> hook. If Muster isn't running, Claude Code asks the usual way.</li>
+        <li><b>Jump to it.</b> <kbd>⌥</kbd><kbd>Tab</kbd> lists every session, the one that needs you first. Letting go opens it in its terminal or app.</li>
+      </ul>
+      <p>It reads the files Claude Code already writes, so there's no account and nothing leaves your Mac. MIT licensed, for macOS 14 or later.</p>
+      <div class="ctas">
+        <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">Download Muster</a>
+        <code>brew install --cask josefchen/tap/muster</code>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq">
+    <h2>Questions</h2>
+    <h3>Why don't I get notifications in the VS Code or Cursor terminal?</h3>
+    <p>Claude Code only sends its own desktop notification to Ghostty, Kitty and iTerm2. In other terminals, use the bell, a hook or Muster.</p>
+    <h3>Can I be notified only for permission requests?</h3>
+    <p>Yes. Set the hook's matcher to <code>permission_prompt</code>.</p>
+    <h3>Do notifications work over SSH?</h3>
+    <p>Claude Code's own notification reaches your Mac over SSH in Ghostty and Kitty, and in iTerm2 once forwarding is on. Muster also lists the Claude Code sessions that Claude's desktop app runs over SSH.</p>
+    <h3>I run several sessions at once. Which option fits?</h3>
+    <p>A hook or the bell tells you that some session needs you. Muster tells you which one, and lets you answer it without switching.</p>
+  </section>
+
+  <p class="sources">Based on Anthropic's documentation for <a class="link" href="https://code.claude.com/docs/en/terminal-config">terminal setup</a> and <a class="link" href="https://code.claude.com/docs/en/hooks">hooks</a>.</p>
+</article>
+</main>
+
+<script>
+  // A Copy button on each code block, added only where the clipboard is available.
+  if (navigator.clipboard) document.querySelectorAll('pre').forEach(pre => {
+    const box = document.createElement('div');
+    box.className = 'code';
+    pre.replaceWith(box);
+    box.append(pre);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = 'Copy';
+    b.addEventListener('click', () => navigator.clipboard.writeText(pre.innerText).then(() => {
+      b.textContent = 'Copied';
+      setTimeout(() => b.textContent = 'Copy', 1500);
+    }));
+    box.append(b);
+  });
+</script>
+
+<footer><div class="wrap">
+  <span>Muster is an independent project, not affiliated with Anthropic, OpenAI or Anysphere.</span>
+  <span><a href="/changelog">Changelog</a> · <a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
+</div></footer>
+</body>
+</html>
