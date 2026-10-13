@@ -2,6 +2,17 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
+## 1.3.0 · 2026-10-13
+
+See why an agent asks before you answer, with the keys on the alert.
+
+- <!-- text.below.photo --> **Details with ⌥↓.** The alert unfolds to show what the agent sent: its reason for asking, the whole command, the file and size of an edit, the plan, and the folder. ⌥↑ folds it away, and each new request starts folded.
+- <!-- list.number --> **Choices with their notes.** A question lists every option with the agent's note on it, so you can pick one with ⌥1, ⌥2 or ⌥3 without switching.
+- <!-- keyboard --> **The keys are on the alert.** Every alert shows the keys that answer it as keycaps, or ⌥Tab to go to it when there's nothing to answer from Muster.
+- <!-- hand.raised --> **Your keys stay yours.** Muster takes ⌥↩, ⌥⌫, the arrows and the digits only while something on screen needs them, and only the digits a question has. While you type in another app, the alert lets go of its keys, so ⌥⌫ deletes a word there and ⌥↩ starts a new line. ⌥↑ and ⌥↓ move lines in your editor again whenever nothing is asking.
+- <!-- rectangle.on.rectangle --> **One sheet of glass.** The alert is a single tinted surface now, without a card inside it.
+- <!-- hand.point.up.left --> **Practice in the tour.** The welcome tour's answer step has an alert you can try the keys on.
+
 ## 1.2.1 · 2026-10-13
 
 Installing and updating are smoother.
