@@ -7,9 +7,10 @@ Thanks for helping. A few things keep Muster fast and trustworthy.
 - Run `./test.sh` and `./build.sh`. Both must pass.
 - If you touch a reader, add a case to `Tests/main.swift` using fixture files. Never
   commit real transcripts.
-- If you change how something looks, regenerate the screenshots and video with
-  `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` (they run Muster in demo mode) and
-  check them in light and dark mode.
+- If you change how something looks, regenerate the screenshots and videos with
+  `scripts/capture-stills.sh`, `scripts/record-scene.sh`, `scripts/record-answer.sh` and
+  `scripts/tour.sh`, and check them in light and dark mode. They run Muster in demo mode,
+  which opens and plays each panel itself, so they need Screen Recording and nothing else.
 
 ## Principles
 

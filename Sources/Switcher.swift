@@ -50,6 +50,7 @@ final class Switcher {
     }
 
     var isOpen: Bool { active }
+    var frame: NSRect { panel.frame }
 
     func cancel() { end() }
 

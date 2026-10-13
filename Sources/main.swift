@@ -383,7 +383,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if Bundle.main.bundleIdentifier != nil && !Store.demo && !E2E.on { notifier = Notifier() }
         if Store.demo, CommandLine.arguments.contains("--backdrop") { Demo.showBackdrop() }
-        Demo.play { [weak self] a in self?.attention.answer(a) }
+        Demo.play(answer: { [weak self] a in self?.attention.answer(a) }, switcher: switcher, deck: deck)
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(handleURL(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
         if !E2E.on && !UserDefaults.standard.bool(forKey: "launched") && (!Store.demo || CommandLine.arguments.contains("--welcome")) {

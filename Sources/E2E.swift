@@ -65,7 +65,10 @@ enum E2E {
 
     /// Modifier keys the switcher sees as held: set over the control channel in headless runs.
     static var held: NSEvent.ModifierFlags = []
-    static var modifierFlags: NSEvent.ModifierFlags { on && !ui ? held : NSEvent.modifierFlags }
+    static var modifierFlags: NSEvent.ModifierFlags {
+        if Demo.holding { return Hotkeys.shared.switcher.flags }
+        return on && !ui ? held : NSEvent.modifierFlags
+    }
 
     /// The agent app taken to be frontmost, for prompts that let go when you look at it.
     static var front: Agent?

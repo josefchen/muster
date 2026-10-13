@@ -23,16 +23,16 @@ for w in info where (w[kCGWindowName as String] as? String) == "Welcome to Muste
 }'
 }
 
+# Each page opens on its own (--step), so this needs Screen Recording but not Accessibility.
 for look in dark light; do
   flag=""; [ "$look" = light ] && flag="--light"
-  "$APP/Contents/MacOS/Muster" --demo --backdrop $flag --welcome -launched NO >/dev/null 2>&1 &
-  pid=$!
-  sleep 2.5
-  for step in 1 2 3 4 5; do
-    screencapture -x -R "$(rect)" "$OUT/$step-$look.png"
-    [ "$step" -lt 5 ] && osascript -e 'tell application "System Events" to key code 36' && sleep 0.9
+  for step in 0 1 2 3 4; do
+    "$APP/Contents/MacOS/Muster" --demo --backdrop $flag --welcome --step "$step" -launched NO >/dev/null 2>&1 &
+    pid=$!
+    sleep 2.5
+    screencapture -x -R "$(rect)" "$OUT/$((step + 1))-$look.png"
+    kill "$pid"
+    wait "$pid" 2>/dev/null || true
   done
-  kill "$pid"
-  wait "$pid" 2>/dev/null || true
 done
 echo "$OUT"

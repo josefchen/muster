@@ -90,6 +90,23 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         onShow?()
     }
 
+    var frame: NSRect { panel.frame }
+
+    /// Where it will open with no anchor, before it does: for demo scenes.
+    var plannedFrame: NSRect {
+        let area = NSScreen.screens.first?.visibleFrame ?? .zero
+        let sessions = Store.shared.sessions
+        let size = NSSize(width: Self.width, height: 96 + (sessions.isEmpty ? 120 : min(SessionList.height(for: sessions), Self.maxListHeight)) + 38)
+        return NSRect(x: area.midX - size.width / 2, y: area.maxY - size.height - area.height * 0.12, width: size.width, height: size.height)
+    }
+
+    /// Typing in the search field, for demo scenes.
+    func type(_ text: String) {
+        search.stringValue = text
+        search.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        refilter()
+    }
+
     func hide() {
         panel.orderOut(nil)
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
