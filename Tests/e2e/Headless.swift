@@ -376,6 +376,10 @@ final class Headless {
         p = held("claude", h.sid, "question", "AskUserQuestion is held as a question")
         check((p?["options"] as? [String]) == ["Postgres", "SQLite", "Redis"] && p?["blocksNative"] as? Bool == true, "…with its three options")
         expect(app, "…shown in the alert") { $0.visible("alert") && $0.alertSession == h.id }
+        expect(app, "…which holds ⌥1–⌥3 and the arrows, and leaves ⌥↩, ⌥⌫ and the other digits to other apps") {
+            $0.keys == ["⌥↑", "⌥↓", "⌥1", "⌥2", "⌥3"]
+        }
+        check(app.state()?.alertHints == "⌥1–⌥3 Choose, ⌥↓ Options", "…and names them", app.state()?.alertHints ?? "no hints")
         app.act("peek", ["open": true])
         expect(app, "⌥↓ lists every option with its note") { s in
             let d = s.panel("alert")["details"] as? String ?? ""
@@ -444,6 +448,14 @@ final class Headless {
         p = held("claude", h.sid, "permission", "a request for the answer keys")
         expect(app, "…shown in the alert") { $0.visible("alert") && $0.alertSession == h.id }
         check(app.state()?.panel("alert")["details"] is NSNull, "…folded, with the details out of the way")
+        check(app.state()?.alertHints == "⌥↩ Allow, ⌥⌫ Deny, ⌥↓ Details", "…and its keys named on it", app.state()?.alertHints ?? "no hints")
+        expect(app, "…held while it shows: ⌥↩ ⌥⌫ and the arrows, but no digits or ⌥Esc") { s in
+            ["⌥↩", "⌥⌫", "⌥↑", "⌥↓"].allSatisfy(s.keys.contains) && !s.keys.contains("⌥Esc") && !s.keys.contains("⌥1")
+        }
+        app.act("typing", ["on": true])
+        expect(app, "typing in another app hands the keys back, so ⌥⌫ deletes a word there") { $0.keys.isEmpty && $0.visible("alert") }
+        app.act("typing", ["on": false])
+        expect(app, "…and they're held again once you stop") { $0.keys.contains("⌥↩") }
         app.act("peek", ["open": true])
         expect(app, "⌥↓ unfolds the agent's reason and the folder, without repeating a command the row shows whole") { s in
             let d = s.panel("alert")["details"] as? String ?? ""
@@ -453,6 +465,7 @@ final class Headless {
         expect(app, "⌥↑ folds them again") { $0.panel("alert")["details"] is NSNull }
         app.act("answer", ["answer": "allow"])
         reply(req, "⌥↩ with the alert up allows it", Expect.allow)
+        expect(app, "with nothing asking, Muster holds no keys but ⌥Tab and search") { $0.keys.isEmpty }
 
         req = claudeHook(permissionURL, perm)
         p = held("claude", h.sid, "permission", "another, for the switcher")
@@ -593,6 +606,8 @@ final class Headless {
         expect(app, "holding ⌥Tab shows the switcher: live sessions, then the latest five done") {
             $0.visible("switcher") && $0.items("switcher") == pick && $0.selected("switcher") == 0
         }
+        check(app.state().map { ["⌥↑", "⌥↓", "⌥Esc", "⌥↩", "⌥⌫", "⌥9"].allSatisfy($0.keys.contains) } == true,
+              "…and holds the arrows, ⌥Esc and the answer keys only while it's open")
         app.act("next")
         app.act("next")
         app.act("previous")

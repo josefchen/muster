@@ -366,9 +366,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch action {
             case .next: self.switcher.step(1)
             case .previous: self.switcher.step(-1)
-            // With an alert up and the switcher closed, the arrows unfold and fold its details.
-            case .down: if self.switcher.isOpen || !self.attention.peek(true) { self.switcher.step(1) }
-            case .up: if self.switcher.isOpen || !self.attention.peek(false) { self.switcher.step(-1) }
+            // Held only while the switcher is open or the alert has details to unfold.
+            case .down: if self.switcher.isOpen { self.switcher.step(1) } else { self.attention.peek(true) }
+            case .up: if self.switcher.isOpen { self.switcher.step(-1) } else { self.attention.peek(false) }
             case .cancel: self.switcher.cancel()
             case .search: self.deck.toggle(below: nil)
             }

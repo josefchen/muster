@@ -69,11 +69,35 @@ final class Hotkeys: ObservableObject {
     /// Shortcuts macOS refused because something else registered them first.
     @Published private(set) var conflicts: Set<String> = []
 
+    /// The keys a panel needs while it's up, on top of the switcher and search shortcuts.
+    /// Each is held only while a panel asks for it: held all the time, they'd take Move Line
+    /// Up and Down, Delete Word, a newline in Claude Code and, on many keyboard layouts,
+    /// brackets from every other app.
+    struct PanelKeys: Equatable {
+        var arrows = false    // ↑ ↓
+        var escape = false    // Esc
+        var confirm = false   // Return
+        var always = false    // ⇧Return
+        var deny = false      // Delete
+        var digits = 0        // 1 to `digits`
+
+        static let all = PanelKeys(arrows: true, escape: true, confirm: true, always: true, deny: true, digits: 9)
+
+        func union(_ o: PanelKeys) -> PanelKeys {
+            PanelKeys(arrows: arrows || o.arrows, escape: escape || o.escape, confirm: confirm || o.confirm,
+                      always: always || o.always, deny: deny || o.deny, digits: max(digits, o.digits))
+        }
+    }
+
     private(set) var handler: ((Action) -> Void)?
     var onAnswer: ((Answer) -> Void)?
     private var refs: [EventHotKeyRef] = []
-    private var answerRefs: [EventHotKeyRef] = []
-    private var answerOwners: Set<String> = []
+    private var panelRefs: [EventHotKeyRef] = []
+    private var owners: [String: PanelKeys] = [:]
+    /// What the panels ask for together; registered unless this is a headless e2e run.
+    private(set) var held = PanelKeys()
+    /// When one of these shortcuts last fired, so the alert can tell its own keys from typing.
+    private(set) var lastPress = Date.distantPast
     private var installed = false
 
     private init() {
@@ -90,6 +114,7 @@ final class Hotkeys: ObservableObject {
                 var id = EventHotKeyID()
                 GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                                   nil, MemoryLayout<EventHotKeyID>.size, nil, &id)
+                Hotkeys.shared.lastPress = Date()
                 if id.id >= 10 { Hotkeys.shared.answerKey(id.id) } else if let action = Action(rawValue: id.id) { Hotkeys.shared.handler?(action) }
                 return noErr
             }, 1, &spec, nil, nil)
@@ -101,7 +126,7 @@ final class Hotkeys: ObservableObject {
         switcher = s
         save(s, "shortcut.switcher")
         register()
-        if !answerOwners.isEmpty { registerAnswerKeys() }
+        registerPanelKeys()
     }
 
     func set(search s: Shortcut) {
@@ -110,27 +135,45 @@ final class Hotkeys: ObservableObject {
         register()
     }
 
-    /// Return / ⇧Return / Delete / 1–9 with the switcher's modifiers answer a
-    /// prompt, registered only while the switcher or the alert shows one.
-    func answerKeys(_ on: Bool, owner: String) {
-        let before = !answerOwners.isEmpty
-        if on { answerOwners.insert(owner) } else { answerOwners.remove(owner) }
-        if before != !answerOwners.isEmpty { registerAnswerKeys() }
+    /// Ask for keys while a panel is up, with the switcher's modifiers; nil gives them back.
+    func hold(_ keys: PanelKeys?, owner: String) {
+        owners[owner] = keys
+        let want = owners.values.reduce(PanelKeys()) { $0.union($1) }
+        guard want != held else { return }
+        held = want
+        registerPanelKeys()
     }
 
-    private func registerAnswerKeys() {
-        answerRefs.forEach { UnregisterEventHotKey($0) }
-        answerRefs.removeAll()
-        guard !answerOwners.isEmpty, E2E.showsUI else { return }
+    /// The held keys as they read, for e2e runs.
+    var heldNames: [String] {
+        let m = switcher.symbols.replacingOccurrences(of: "⇧", with: "")
+        var names: [String] = []
+        if held.arrows { names += [m + "↑", m + "↓"] }
+        if held.escape { names.append(m + "Esc") }
+        if held.confirm { names.append(m + "↩") }
+        if held.always { names.append("⇧" + m + "↩") }
+        if held.deny { names.append(m + "⌫") }
+        names += (0..<held.digits).map { m + String($0 + 1) }
+        return names
+    }
+
+    private func registerPanelKeys() {
+        panelRefs.forEach { UnregisterEventHotKey($0) }
+        panelRefs.removeAll()
+        guard E2E.showsUI else { return }
         let m = switcher.modifiers
+        var keys: [(UInt32, Int, UInt32)] = []
+        if held.arrows { keys += [(Action.up.rawValue, kVK_UpArrow, m), (Action.down.rawValue, kVK_DownArrow, m)] }
+        if held.escape { keys.append((Action.cancel.rawValue, kVK_Escape, m)) }
+        if held.confirm { keys.append((10, kVK_Return, m)) }
+        if held.always { keys.append((11, kVK_Return, m | UInt32(shiftKey))) }
+        if held.deny { keys.append((12, kVK_Delete, m)) }
         let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9]
-        var keys: [(UInt32, UInt32, UInt32)] = [(10, UInt32(kVK_Return), m), (11, UInt32(kVK_Return), m | UInt32(shiftKey)),
-                                                (12, UInt32(kVK_Delete), m)]
-        for (i, d) in digits.enumerated() { keys.append((20 + UInt32(i), UInt32(d), m)) }
+        for (i, d) in digits.prefix(held.digits).enumerated() { keys.append((20 + UInt32(i), d, m)) }
         for (code, key, mods) in keys {
             var ref: EventHotKeyRef?
             let id = EventHotKeyID(signature: OSType(0x4D535452), id: code)
-            if RegisterEventHotKey(key, mods, id, GetApplicationEventTarget(), 0, &ref) == noErr, let ref { answerRefs.append(ref) }
+            if RegisterEventHotKey(UInt32(key), mods, id, GetApplicationEventTarget(), 0, &ref) == noErr, let ref { panelRefs.append(ref) }
         }
     }
 
@@ -154,9 +197,6 @@ final class Hotkeys: ObservableObject {
         let m = switcher.modifiers
         if !add(.next, switcher.keyCode, m) { failed.insert("switcher") }
         _ = add(.previous, switcher.keyCode, m | UInt32(shiftKey))
-        _ = add(.up, UInt32(kVK_UpArrow), m)
-        _ = add(.down, UInt32(kVK_DownArrow), m)
-        _ = add(.cancel, UInt32(kVK_Escape), m)
         if !add(.search, search.keyCode, search.modifiers) { failed.insert("search") }
         conflicts = failed
     }

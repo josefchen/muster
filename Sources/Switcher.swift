@@ -63,7 +63,7 @@ final class Switcher {
 
     private func begin() {
         active = true
-        Hotkeys.shared.answerKeys(true, owner: "switcher")
+        Hotkeys.shared.hold(.all, owner: "switcher")
         hint.stringValue = Self.hintText
         snapshot = Self.pick(Store.shared.sessions)
         if practice && snapshot.isEmpty { snapshot = Self.pick(Session.samples) }
@@ -166,7 +166,7 @@ final class Switcher {
 
     private func end() {
         active = false
-        Hotkeys.shared.answerKeys(false, owner: "switcher")
+        Hotkeys.shared.hold(nil, owner: "switcher")
         showTimer?.invalidate()
         releaseWatch?.invalidate()
         if let localMouse { NSEvent.removeMonitor(localMouse) }

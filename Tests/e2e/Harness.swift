@@ -626,6 +626,10 @@ struct State {
     func items(_ name: String) -> [String] { panel(name)["items"] as? [String] ?? [] }
     func selected(_ name: String) -> Int? { panel(name)["selected"] as? Int }
     var alertSession: String? { panel("alert")["session"] as? String }
+    /// The alert's key line as text, e.g. "⌥↩ Allow, ⌥⌫ Deny, ⌥↓ Details".
+    var alertHints: String? { panel("alert")["hints"] as? String }
+    /// Keys Muster holds beyond the switcher and search shortcuts.
+    var keys: [String] { raw["keys"] as? [String] ?? [] }
     var whatsNew: String? { raw["whatsNew"] as? String }
     func source(_ agent: String) -> String? { (raw["sources"] as? [String: String])?[agent] }
     var hookPort: UInt16 { UInt16(raw["hookPort"] as? Int ?? 0) }

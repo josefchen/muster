@@ -33,6 +33,9 @@ enum E2E {
     static let ui = on && env["MUSTER_E2E_UI"] == "1"
     /// Panels on screen, key focus and global shortcuts: always, except in headless e2e runs.
     static var showsUI: Bool { !on || ui }
+    /// Stands in for typing in another app (true) or not (false); nil reads the real keyboard,
+    /// which e2e runs never do, so someone typing during a run can't change its result.
+    static var typing: Bool? = on ? false : nil
 
     private static var refusal: String? {
         guard Bundle.main.bundleIdentifier == bundleID else { return "the bundle id must be \(bundleID)" }
@@ -250,6 +253,8 @@ enum E2E {
     ///   type {text}                                      the deck's search field
     ///   key {key: return|escape|up|down|cmd+1…cmd+9}     a key in the deck
     ///   alert {part: open|dismiss}                       a click on the alert or its close button
+    ///   peek {open}                                      ⌥↓ (true) or ⌥↑ (false) on the alert
+    ///   typing {on}                                      as if you were typing in another app, or had stopped
     ///   front {agent}                                    an agent's app comes to the front (null: none)
     ///   rescan
     private static func act(_ d: [String: Any]) -> String? {
@@ -310,6 +315,8 @@ enum E2E {
             surface.mouseDown(with: e)
         case "peek":
             NotificationCenter.default.post(name: Attention.peekRequest, object: NSNumber(value: d["open"] as? Bool ?? true))
+        case "typing":
+            typing = d["on"] as? Bool ?? false
         case "front":
             front = (d["agent"] as? String).flatMap(Agent.init(rawValue:))
             NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.didActivateApplicationNotification, object: NSWorkspace.shared,
@@ -366,7 +373,7 @@ enum E2E {
                 "hooks": ["claude": HookInstaller.isInstalled(.claude), "codex": HookInstaller.isInstalled(.codex)],
                 "panels": ["switcher": info("switcher"), "deck": info("deck"), "alert": info("alert")],
                 "whatsNew": WhatsNew.shared.showing ?? NSNull(),
-                "conflicts": Hotkeys.shared.conflicts.sorted(), "opened": opened]
+                "conflicts": Hotkeys.shared.conflicts.sorted(), "keys": Hotkeys.shared.heldNames, "opened": opened]
     }
 
     private static var arch: String {
@@ -394,6 +401,9 @@ enum E2E {
         if let field = find(NSTextField.self, in: p.content, where: \.isEditable) { d["query"] = field.stringValue }
         if let more = find(NSTextField.self, in: p.content, where: { $0.identifier?.rawValue == "muster.details" }) {
             d["details"] = more.isHidden ? NSNull() : more.stringValue
+        }
+        if let keys = find(NSTextField.self, in: p.content, where: { $0.identifier?.rawValue == "muster.keys" }) {
+            d["hints"] = keys.accessibilityLabel() ?? ""
         }
         return d
     }

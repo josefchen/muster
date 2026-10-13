@@ -21,6 +21,62 @@ func set(_ field: NSTextField, _ text: String) {
     if field.stringValue != text { field.stringValue = text }
 }
 
+/// Keys and what they do, for a hint line: `KeyHint(["⌥↩"], "Allow")`. A key of "–" reads as a range.
+struct KeyHint: Equatable {
+    let keys: [String]
+    let action: String
+    init(_ keys: [String], _ action: String) { self.keys = keys; self.action = action }
+}
+
+/// The keys drawn as keycaps, each followed by its action, the way a Mac menu shows shortcuts.
+func keyHints(_ hints: [KeyHint], size: CGFloat = 11, appearance: NSAppearance) -> NSAttributedString {
+    let font = NSFont.systemFont(ofSize: size, weight: .medium)
+    let text: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
+    let out = NSMutableAttributedString()
+    for (i, hint) in hints.enumerated() {
+        if i > 0 { out.append(NSAttributedString(string: "      ", attributes: text)) }
+        for key in hint.keys {
+            if key == "–" { out.append(NSAttributedString(string: " – ", attributes: text)); continue }
+            let cap = Keycap.image(key, font: font, appearance: appearance)
+            let a = NSTextAttachment()
+            a.image = cap
+            a.bounds = CGRect(x: 0, y: ((font.capHeight - cap.size.height) / 2).rounded(), width: cap.size.width, height: cap.size.height)
+            out.append(NSAttributedString(attachment: a))
+        }
+        out.append(NSAttributedString(string: (hint.keys.isEmpty ? "" : " ") + hint.action, attributes: text))
+    }
+    let centred = NSMutableParagraphStyle()
+    centred.alignment = .center
+    out.addAttribute(.paragraphStyle, value: centred, range: NSRange(location: 0, length: out.length))
+    return out
+}
+
+private enum Keycap {
+    private static var cache: [String: NSImage] = [:]
+
+    static func image(_ key: String, font: NSFont, appearance: NSAppearance) -> NSImage {
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let id = "\(key)|\(font.pointSize)|\(dark)"
+        if let hit = cache[id] { return hit }
+        let glyphs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor(white: dark ? 1 : 0, alpha: dark ? 0.78 : 0.68)]
+        let t = (key as NSString).size(withAttributes: glyphs)
+        let h = ceil(font.capHeight) + 9
+        let size = NSSize(width: max(h + 2, ceil(t.width) + 10), height: h)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let cap = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 4.5, yRadius: 4.5)
+            NSColor(white: dark ? 1 : 0, alpha: dark ? 0.12 : 0.06).setFill()
+            cap.fill()
+            NSColor(white: dark ? 1 : 0, alpha: dark ? 0.16 : 0.14).setStroke()
+            cap.lineWidth = 1
+            cap.stroke()
+            (key as NSString).draw(at: NSPoint(x: (rect.width - t.width) / 2, y: (rect.height - t.height) / 2), withAttributes: glyphs)
+            return true
+        }
+        cache[id] = image
+        return image
+    }
+}
+
 /// Borderless, non-activating panel whose content sits on system glass. Follows
 /// the system appearance; all text uses semantic colours so it reads on both.
 class GlassPanel: NSPanel {
@@ -65,6 +121,14 @@ class GlassPanel: NSPanel {
     }
 
     override var canBecomeKey: Bool { canKey && E2E.showsUI }
+
+    /// Colours the glass itself where macOS has Liquid Glass; false where the caller must.
+    @discardableResult
+    func tint(_ colour: NSColor?) -> Bool {
+        guard #available(macOS 26.0, *), let glass = contentView as? NSGlassEffectView else { return false }
+        glass.tintColor = colour
+        return true
+    }
 
     /// Headless e2e runs keep every panel transparent and click-through.
     override var alphaValue: CGFloat {
@@ -123,7 +187,9 @@ final class SessionRow: Flipped {
         }
     }
 
-    func show(_ s: Session, now: Date) {
+    /// `unfolded`: the alert lists the prompt's details below, so the row needn't squeeze them in.
+    /// `trailing`: the answer keys or usage under the state; the alert has its own key line.
+    func show(_ s: Session, now: Date, unfolded: Bool = false, trailing: Bool = true) {
         if session?.agent != s.agent { icon.image = s.agent.icon }
         session = s
         set(title, s.displayTitle)
@@ -133,7 +199,9 @@ final class SessionRow: Flipped {
                 .foregroundColor: NSColor.secondaryLabelColor, .font: NSFont.systemFont(ofSize: 12)])
             let code: Bool
             if case .permission = p.kind { code = true } else { code = false }
-            line.append(NSAttributedString(string: p.detail, attributes: [
+            var inline = p.detail
+            if unfolded, case .question = p.kind { inline = "" }
+            line.append(NSAttributedString(string: inline, attributes: [
                 .foregroundColor: NSColor.labelColor,
                 .font: code ? NSFont.monospacedSystemFont(ofSize: 11.5, weight: .medium) : NSFont.systemFont(ofSize: 12, weight: .medium)]))
             let truncate = NSMutableParagraphStyle()
@@ -150,7 +218,9 @@ final class SessionRow: Flipped {
         set(state, s.stateLabel)
         state.textColor = s.status == .working ? .secondaryLabelColor : s.status.colour
         let working = s.status == .working
-        stateDot.layer?.backgroundColor = (working ? s.agent.colour : s.status.colour).cgColor
+        // Colour means what to do: orange needs you, red failed, green done. Working is calm grey,
+        // even for Claude, whose own orange would read as waiting on you; the icon says which agent.
+        effectiveAppearance.performAsCurrentDrawingAppearance { stateDot.layer?.backgroundColor = s.status.colour.cgColor }
         stateDot.isHidden = s.status == .idle
         if working, stateDot.layer?.animation(forKey: "breathe") == nil {
             let breathe = CABasicAnimation(keyPath: "opacity")
@@ -164,7 +234,7 @@ final class SessionRow: Flipped {
         } else if !working {
             stateDot.layer?.removeAnimation(forKey: "breathe")
         }
-        set(tokens, prompt.map(Self.answerHint) ?? Self.usageText(s))
+        set(tokens, trailing ? prompt.map(Self.answerHint) ?? Self.usageText(s) : "")
         let cost = s.cost.map { "≈ \(money($0)) at API list prices\(s.costPartial ? " (some models unpriced)" : "") · \(s.tokens.formatted()) tokens" }
         let tip = [s.fault?.message, cost].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         toolTip = tip.isEmpty ? nil : tip
@@ -210,7 +280,6 @@ final class SessionList: Flipped {
         super.init(frame: frame)
         highlight.wantsLayer = true
         highlight.layer?.cornerRadius = 12
-        highlight.layer?.borderWidth = 1
         addSubview(highlight)
     }
 
@@ -259,8 +328,9 @@ final class SessionList: Flipped {
         selected = max(0, min(index, items.count - 1))
         let s = items[selected]
         highlight.isHidden = false
-        highlight.layer?.backgroundColor = s.agent.colour.withAlphaComponent(0.16).cgColor
-        highlight.layer?.borderColor = s.agent.colour.withAlphaComponent(0.45).cgColor
+        // A plain fill, as Mac lists select; warm only when the row is waiting on you.
+        let fill = s.status == .needsYou ? Status.needsYou.colour.withAlphaComponent(0.18) : NSColor.labelColor.withAlphaComponent(0.08)
+        effectiveAppearance.performAsCurrentDrawingAppearance { highlight.layer?.backgroundColor = fill.cgColor }
         let target = rowFrames[selected]
         if animated, highlight.frame != .zero, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { ctx in
