@@ -17,7 +17,7 @@ mkdir -p "$OUT"
 quit() { pkill -x Muster 2>/dev/null || true; while pgrep -x Muster >/dev/null; do sleep 0.1; done; }
 SCALE=$(swift -e 'import AppKit; print(Int(NSScreen.screens[0].backingScaleFactor))')
 case "$SCENE" in
-  switcher) LEN=10.4 POSTER=3.6 ;;
+  switcher) LEN=8.4 POSTER=3.6 ;;
   search) LEN=6.8 POSTER=4.5 ;;
   *) echo "no scene called $SCENE" >&2; exit 1 ;;
 esac
