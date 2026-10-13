@@ -2,6 +2,14 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
+## 1.3.1 · 2026-10-13
+
+Clearer when Muster can't answer for you yet.
+
+- <!-- gearshape --> **Where to turn answering on.** An alert that Muster can't answer, because answering is off for that agent, now says where to turn it on, next to ⌥Tab to go to the session.
+- <!-- keyboard --> **The switcher's keys, as keys.** Its footer shows ⌥, Tab, ⇧Tab and Esc as keycaps, like the alert.
+- <!-- list.bullet.rectangle --> **A quieter selection.** The selected row is a plain fill whatever its state, so orange only ever means an agent needs you.
+
 ## 1.3.0 · 2026-10-13
 
 See why an agent asks before you answer, with the keys on the alert.
