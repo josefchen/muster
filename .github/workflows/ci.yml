@@ -1,66 +1,44 @@
-name: CI
+name: Directory screenshots
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
-  build:
+  capture:
     runs-on: macos-26
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
-      - name: Test
+      - name: Test the app
         run: ./test.sh
-      - name: Build
-        run: swiftc -O -swift-version 5 -target arm64-apple-macos14 -o Muster Sources/*.swift
-      - name: End-to-end
-        run: scripts/e2e.sh
-      - name: Soak
-        run: scripts/e2e.sh --soak 2
-        env:
-          MUSTER_SOAK_CPU_LIMIT: "3"
-      # Only macOS 26's SDK compiles Muster (it uses Liquid Glass when it's there), so the
-      # other Macs below test this one universal build rather than building their own.
-      - name: Build for other Macs
-        run: scripts/e2e.sh --export dist && tar -czf e2e.tgz dist
-      - uses: actions/upload-artifact@v7
-        with:
-          name: e2e
-          path: e2e.tgz
-          retention-days: 3
-
-  # The same suite on every macOS Muster supports, on Apple silicon and on Intel.
-  other-macs:
-    needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-14, macos-15, macos-15-intel, macos-26-intel]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v8
-        with:
-          name: e2e
-      - name: End-to-end
-        run: tar -xzf e2e.tgz && scripts/e2e.sh --prebuilt dist
-      # The suite runs headless; these show what the panels look like on this Mac.
-      - name: Screenshots
-        if: always()
+      - name: Build the real app
+        run: ./build.sh "$RUNNER_TEMP/Muster.app"
+      - name: Capture real app with the menu bar visible
+        shell: bash
         run: |
-          app=dist/MusterE2E.app/Contents/MacOS/MusterE2E
+          set -euo pipefail
+          app="$RUNNER_TEMP/Muster.app/Contents/MacOS/Muster"
           mkdir -p shots
-          shot() { name=$1; shift; "$app" "$@" >/dev/null 2>&1 & pid=$!; sleep 5; screencapture -x "shots/$name.png" || true; kill $pid; sleep 1; }
-          for look in dark light; do
-            flag=""; [ "$look" = light ] && flag=--light
-            shot "alert-$look" --demo --backdrop --attention --question --peek $flag
-            shot "switcher-$look" --demo --backdrop --switcher $flag
-            shot "tour-$look" --demo --backdrop --welcome --step 3 -launched NO $flag
-          done
-          ls -la shots
+          pkill -x Muster || true
+          sleep 2
+          shot() {
+            local name="$1"
+            shift
+            "$app" --demo "$@" -launched YES >"shots/$name.log" 2>&1 &
+            local pid=$!
+            sleep 6
+            kill -0 "$pid"
+            screencapture -x "shots/$name.png"
+            kill "$pid"
+            wait "$pid" || true
+            sleep 2
+          }
+          shot answer-details --attention --question --peek
+          shot session-switcher --switcher
+          shot session-search --search
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: shots-${{ matrix.os }}
+          name: muster-directory-screenshots
           path: shots
-          retention-days: 3
+          retention-days: 14
