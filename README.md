@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Never keep an agent waiting.</b><br>
-  A native Mac menu bar switcher for your Claude Code, Codex and Cursor sessions.
+  A free, open-source Mac menu bar app for your Claude Code, Codex and Cursor sessions.
 </p>
 
 <p align="center">
@@ -17,10 +17,16 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/hero.gif" width="640" alt="Hold ⌥ and tap Tab to switch, ⌥↩ to answer a waiting prompt">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/media/answer-dark.gif">
+    <img src="docs/media/answer-light.gif" width="760" alt="Claude Code and then Codex ask to run a command. Muster's alert shows the newest first with one more waiting, and ⌥↩ answers each in turn.">
+  </picture>
 </p>
 
-<br>
+<p align="center"><sub>Two agents ask. Two presses of <kbd>⌥</kbd><kbd>↩</kbd>, and you never left what you were doing. Recorded from the app.</sub></p>
+
+If you run a few coding agents at once, the slow part isn't the agents. It's noticing which one has been waiting on you for ten minutes. Muster sits in the menu bar, tells you the moment one needs you, and lets you answer without switching apps.
+
 
 <table>
 <tr>
@@ -46,12 +52,16 @@ Most urgent first. Let go to land in its window, or the terminal it runs in.
 </td>
 <td valign="top">
 
-**Know what it costs.**<br>
-Tokens and API-rate cost for every session, priced per model and per message.
+**Find any session.**<br>
+<kbd>⌃</kbd><kbd>⌥</kbd><kbd>Space</kbd> searches the last three hours, with tokens and API-rate cost for each.
 
 </td>
 </tr>
 </table>
+
+<p align="center">
+  <img src="docs/media/hero.gif" width="640" alt="Hold ⌥ and tap Tab to move through sessions, most urgent first">
+</p>
 
 <p align="center">
   <picture>
@@ -60,7 +70,7 @@ Tokens and API-rate cost for every session, priced per model and per message.
   </picture>
 </p>
 
-<p align="center"><sub>Native AppKit and Liquid Glass · 2 MB download · about 25 MB of memory · no accounts, no analytics · MIT</sub></p>
+<p align="center"><sub>Native AppKit and Liquid Glass · 2 MB download · about 0.4% CPU and 20 MB of memory with ten agents busy · no accounts, no analytics · MIT</sub></p>
 
 <br>
 
@@ -95,6 +105,14 @@ Muster adds one hook to the agent's own settings and removes exactly that when y
 | <kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>Space</kbd> | Search every session |
 
 Both shortcuts can be changed in Settings. Scripting: `muster://search`, `muster://next`, `muster://settings`, `muster://welcome`, `muster://whats-new`.
+
+<details>
+<summary><b>Why not just a notification?</b></summary>
+<br>
+
+Claude Code can notify you on its own in some terminals, and a few lines of settings add a sound or a banner anywhere else; [this guide compares every option](https://agentmuster.app/guides/claude-code-notifications-mac). A notification tells you that something happened. With several sessions running you still have to work out which one, find its window and type the answer. Muster shows which one, answers it from where you are, and does the same for Codex and Cursor.
+
+</details>
 
 <details>
 <summary><b>How it works</b></summary>
@@ -143,7 +161,7 @@ scripts/e2e.sh        # end-to-end: the real app against a fake home folder
 
 `scripts/e2e.sh` drives the built app the way the agents and you would (transcripts, hook requests, the switcher, deck and alert) without touching your own agents or settings; `--soak [minutes]` checks CPU and memory under load, and `--ui` replays real keystrokes and clicks (it takes over the keyboard while it runs).
 
-`scripts/release.sh <version>` builds a universal, signed and notarized DMG and writes its GitHub release notes from [CHANGELOG.md](CHANGELOG.md), and `scripts/site.sh deploy` publishes [agentmuster.app](https://agentmuster.app) and its changelog page to Cloudflare. `scripts/capture.sh`, `scripts/record.sh` and `scripts/tour.sh` regenerate the screenshots, the video and the welcome tour from demo mode (`Muster --demo`).
+`scripts/release.sh <version>` builds a universal, signed and notarized DMG and writes its GitHub release notes from [CHANGELOG.md](CHANGELOG.md), and `scripts/site.sh deploy` publishes [agentmuster.app](https://agentmuster.app) and its changelog page to Cloudflare. `scripts/capture.sh`, `scripts/record.sh`, `scripts/record-answer.sh` and `scripts/tour.sh` regenerate the screenshots, the videos and the welcome tour from demo mode (`Muster --demo`); `record-answer.sh` needs only Screen Recording, since Muster plays that scene itself.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
