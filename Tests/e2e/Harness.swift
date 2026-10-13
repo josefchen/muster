@@ -459,9 +459,9 @@ struct ClaudeFixture {
                              "stop_reason": "end_turn", "content": [["type": "text", "text": text]], "usage": Self.usage()], at: at)
     }
 
-    func apiError(at: Date = Date()) -> Data {
+    func apiError(_ text: String = "API Error: 529 overloaded", code: String = "server_error", at: Date = Date()) -> Data {
         record("assistant", ["id": "msg_" + hex(24), "role": "assistant", "model": "<synthetic>", "stop_reason": "stop_sequence",
-                             "content": [["type": "text", "text": "API Error: 529 overloaded"]]], at: at, extra: ["isApiErrorMessage": true])
+                             "content": [["type": "text", "text": text]]], at: at, extra: ["isApiErrorMessage": true, "error": code])
     }
 
     func title(_ t: String) -> Data { jsonLine(["type": "custom-title", "customTitle": t, "sessionId": sid]) }
@@ -617,6 +617,7 @@ struct State {
     func session(_ id: String) -> [String: Any]? { sessions.first { $0["id"] as? String == id } }
     func status(_ id: String) -> String? { session(id)?["status"] as? String }
     func unread(_ id: String) -> Bool? { session(id)?["unread"] as? Bool }
+    func fault(_ id: String) -> String? { session(id)?["fault"] as? String }
     func promptID(_ id: String) -> String? { session(id)?["promptID"] as? String }
     var prompts: [[String: Any]] { raw["prompts"] as? [[String: Any]] ?? [] }
     func prompt(agent: String, sid: String) -> [String: Any]? { prompts.last { $0["agent"] as? String == agent && $0["sid"] as? String == sid } }

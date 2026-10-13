@@ -67,6 +67,33 @@ let opusReads: Double = (1000 + 2000) * 0.2
 let expected: Double = (opusInput + opusOutput + opusWrites + opusReads) / 1_000_000
 check(abs((claude["done"]?.cost ?? 0) - expected) < 1e-12, "cost prices 5-minute and 1-hour cache writes separately")
 
+print("Errors")
+func apiError(_ code: String, _ text: String) -> String {
+    json(["type": "assistant", "timestamp": iso(now), "cwd": "/work/atlas", "isApiErrorMessage": true, "error": code,
+          "message": ["id": UUID().uuidString, "model": "<synthetic>", "stop_reason": "stop_sequence",
+                      "content": [["type": "text", "text": text]], "usage": ["input_tokens": 0, "output_tokens": 0]]]) + "\n"
+}
+write("/.claude/projects/-work-atlas/limit.jsonl", apiError("rate_limit", "You've hit your session limit · resets 6pm (Europe/Madrid)"))
+write("/.claude/projects/-work-atlas/offline.jsonl", apiError("server_error", "API Error: Can't reach the API server — check your internet or DNS (ENOTFOUND)"))
+write("/.claude/projects/-work-atlas/busy-api.jsonl", apiError("server_error", "API Error: 529 Overloaded. This is a server-side issue, usually temporary — try again in a moment."))
+write("/.claude/projects/-work-atlas/image.jsonl", apiError("invalid_request", "An image in the conversation exceeds the dimension limit for many-image requests (2000px)."))
+write("/.claude/projects/-work-atlas/weekly.jsonl", assistant("msg_W", "claude-opus-5-5", usage: u2, ago: 60))
+write("/Library/Application Support/Claude/claude-code-sessions/a/b/local_weekly.json", json([
+    "cliSessionId": "weekly", "sessionId": "local_weekly", "title": "Gilvus", "isArchived": false,
+    "lastActivityAt": now.timeIntervalSince1970 * 1000, "permissionMode": "default",
+    "error": "You've hit your weekly limit · resets Oct 15, 12pm (Europe/Madrid)", "errorAt": now.timeIntervalSince1970 * 1000]))
+let errors = Dictionary(uniqueKeysWithValues: ClaudeReader(home: root).scan(now: now).map { ($0.sid, $0) })
+check(errors["limit"]?.status == .blocked && errors["limit"]?.stateLabel == "Out of usage", "a session limit stops the session without asking for you")
+check(errors["limit"]?.fault?.resets == "6pm", "the reset time is read from the message, without the time zone")
+check(errors["limit"]?.status.section == .recent && Status.blocked > .done, "out-of-usage sessions sort below finished ones")
+check(errors["weekly"]?.status == .blocked && errors["weekly"]?.fault?.resets == "Oct 15, 12pm", "Claude.app's own limit error stops the session too")
+check(errors["offline"]?.status == .error && errors["offline"]?.stateLabel == "Connection lost", "a network failure needs a retry in the session")
+check(errors["busy-api"]?.status == .error && errors["busy-api"]?.stateLabel == "API error", "an overloaded API needs a retry in the session")
+check(errors["image"]?.status == .error && errors["image"]?.fault?.kind == .other, "a refused request is an error, though its message says limit")
+check(Fault(message: "Login expired · Please run /login")?.kind == .signedOut, "an expired login reads as signed out")
+check(Fault(message: "Bad Request This model does not support custom API keys.")?.kind == .other, "an API key setting is not a sign-in problem")
+check(Fault(message: "You've hit your monthly spend limit · raise it at claude.ai/settings/usage")?.resets == nil, "a spend limit has no reset time")
+
 print("Codex")
 let rollout = "/.codex/sessions/2026/10/12/rollout-x.jsonl"
 write(rollout, [
@@ -102,9 +129,17 @@ write("/.cursor/projects/work-web/agent-transcripts/c2/c2.jsonl", [
     json(["message": ["content": [["text": "<user_query>Add dark mode</user_query>"]]]]),
     json(["type": "turn_ended", "status": "success"]),
 ].joined(separator: "\n") + "\n")
+write("/.cursor/projects/work-web/agent-transcripts/c3/c3.jsonl", json(["type": "turn_ended", "status": "error", "error": "User aborted request"]) + "\n")
+write("/.cursor/projects/work-web/agent-transcripts/c4/c4.jsonl", json(["type": "turn_ended", "status": "error",
+    "error": "API usage limit reached Switched to composer-2.5 after reaching API limit."]) + "\n")
+write("/.cursor/projects/work-web/agent-transcripts/c5/c5.jsonl", json(["type": "turn_ended", "status": "error",
+    "error": "[unavailable] getaddrinfo ENOTFOUND agentn.api5.cursor.sh"]) + "\n")
 let cursor = Dictionary(uniqueKeysWithValues: CursorReader(home: root).scan(now: now).map { ($0.sid, $0) })
 check(cursor["c1"]?.status == .needsYou && cursor["c1"]?.project == "/work/web", "a blocking pending action reads as needs you")
 check(cursor["c2"]?.status == .done && cursor["c2"]?.title == "Add dark mode", "a turn_ended transcript reads as done, titled by its first query")
+check(cursor["c3"]?.status == .done && cursor["c3"]?.fault == nil, "a turn you cancelled reads as done, not an error")
+check(cursor["c4"]?.status == .blocked, "Cursor's usage limit stops the session without asking for you")
+check(cursor["c5"]?.status == .error && cursor["c5"]?.stateLabel == "Connection lost", "Cursor's network failure needs a retry")
 
 print("Usage history")
 let midnight = Calendar.current.startOfDay(for: now)

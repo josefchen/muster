@@ -287,7 +287,9 @@ final class Headless {
         c.append(c.user("And the docs"), c.reply("Updated."))
         expect(app, "finishing another turn makes it unread again") { $0.status(c.id) == "done" && $0.unread(c.id) == true }
         c.append(c.user("Push it"), c.apiError())
-        expect(app, "Claude: an API error reads as error") { $0.status(c.id) == "error" }
+        expect(app, "Claude: an API error reads as error") { $0.status(c.id) == "error" && $0.fault(c.id) == "API error" }
+        c.append(c.user("Try again"), c.apiError("You've hit your session limit · resets 6pm (Europe/Madrid)", code: "rate_limit"))
+        expect(app, "Claude: a usage limit stops it without asking for you") { $0.status(c.id) == "blocked" && $0.fault(c.id) == "Out of usage" }
         c.append(c.user("Try again"), c.reply("Pushed."))
 
         let x = CodexFixture(fx, project: "pipeline")

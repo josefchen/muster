@@ -167,9 +167,12 @@ final class StatusItem: NSObject {
 }
 
 /// One notification per event: a session starting to wait on you, or finishing.
+/// A usage limit or a lapsed sign-in stops every session at once, so it gets one
+/// notification per agent, not one per session.
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private var last: [String: (Status, Date)] = [:]
     private var seeded = false
+    private var stopsTold: Set<String> = []
 
     override init() {
         super.init()
@@ -201,7 +204,19 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     private func diff(_ sessions: [Session]) {
         defer { seeded = true; last = Dictionary(uniqueKeysWithValues: sessions.map { ($0.id, ($0.status, $0.since)) }) }
-        guard seeded else { return }
+        var stops: [String: Session] = [:]
+        for s in sessions where s.status == .blocked {
+            guard let f = s.fault else { continue }
+            let key = "\(s.agent.rawValue)|\(f.kind)|\(f.resets ?? "")"
+            if stops[key] == nil { stops[key] = s }
+        }
+        // Forget stops that have cleared, so the next one is news again.
+        stopsTold.formIntersection(stops.keys)
+        guard seeded else { stopsTold = Set(stops.keys); return }
+        for (key, s) in stops where !stopsTold.contains(key) {
+            stopsTold.insert(key)
+            if Settings.notifyNeedsYou { postStop(s) }
+        }
         for s in sessions where s.promptID == nil {
             let prev = last[s.id]
             if prev?.0 == s.status && prev?.1 == s.since { continue }
@@ -258,6 +273,17 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: id.uuidString, content: c, trigger: nil))
         }
         shownPrompts = current
+    }
+
+    private func postStop(_ s: Session) {
+        guard let f = s.fault else { return }
+        let c = UNMutableNotificationContent()
+        c.title = "\(s.agent.name) is \(f.kind == .limit ? "out of usage" : "signed out")"
+        c.body = f.resets.map { "Resets \($0)" } ?? f.message.components(separatedBy: " · ").first ?? ""
+        c.categoryIdentifier = "session"
+        c.userInfo = ["id": s.id]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "\(s.agent.rawValue)-stop-\(s.since.timeIntervalSince1970)",
+                                                                     content: c, trigger: nil))
     }
 
     private func post(_ s: Session, _ verb: String) {

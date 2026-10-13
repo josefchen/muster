@@ -1026,6 +1026,7 @@ final class ClaudeReader {
         var title: String
         var cwd: String
         var tools: [String]
+        var fault: Fault?
     }
 
     struct AppRecord {
@@ -1037,18 +1038,19 @@ final class ClaudeReader {
         var cwd: String
         var permissionMode: String
         var errorAt: Date?
+        var error: String
     }
 
     /// A transcript's status, kept current from the lines appended since the last scan.
     private struct Transcript {
         var info: FileInfo?
         var offset: UInt64 = 0
-        var turn: (status: Status, since: Date, tools: [String])?
+        var turn: Turn?
         var title = ""
         var cwd = ""
 
         var state: FileState? {
-            turn.map { FileState(status: $0.status, since: $0.since, title: title, cwd: cwd, tools: $0.tools) }
+            turn.map { FileState(status: $0.status, since: $0.since, title: title, cwd: cwd, tools: $0.tools, fault: $0.fault) }
         }
     }
 
@@ -1083,12 +1085,14 @@ final class ClaudeReader {
             || (t == "system" && top.string(Key.subtype.rawValue) == "stop_hook_summary")
     }
 
+    private typealias Turn = (status: Status, since: Date, tools: [String], fault: Fault?)
+
     /// What the newest turn says, decoding the line only when the bytes can't tell.
-    private static func turn(_ line: UnsafeRawBufferPointer, _ top: TopLevel) -> (Status, Date, [String])? {
+    private static func turn(_ line: UnsafeRawBufferPointer, _ top: TopLevel) -> Turn? {
         let since = parseISO(top.string(Key.timestamp.rawValue)) ?? .distantPast
         switch top.string(Key.type.rawValue) {
         case "system":
-            return (.done, since, [])
+            return (.done, since, [], nil)
         case "assistant":
             guard let d = decode(line) else { return nil }
             let msg = d["message"] as? [String: Any] ?? [:]
@@ -1096,23 +1100,24 @@ final class ClaudeReader {
             let tools = content.filter { $0["type"] as? String == "tool_use" }.compactMap { $0["name"] as? String }
             let stop = msg["stop_reason"] as? String
             if stop == "tool_use" || !tools.isEmpty {
-                return (waitingTools.isDisjoint(with: tools) ? .working : .needsYou, since, tools)
+                return (waitingTools.isDisjoint(with: tools) ? .working : .needsYou, since, tools, nil)
             } else if d["isApiErrorMessage"] as? Bool == true {
-                return (.error, since, tools)
+                let fault = Fault(code: d["error"] as? String, message: content.compactMap { $0["text"] as? String }.joined(separator: " "))
+                return (fault?.status ?? .done, since, tools, fault)
             } else if ["end_turn", "stop_sequence", "max_tokens"].contains(stop ?? "") {
-                return (.done, since, tools)
+                return (.done, since, tools, nil)
             }
-            return (.working, since, tools)
+            return (.working, since, tools, nil)
         default:
             // A user turn (often a large tool result) is decoded only if it may be an interruption.
-            guard UsageTally.find(line, interrupted) != nil else { return (.working, since, []) }
+            guard UsageTally.find(line, interrupted) != nil else { return (.working, since, [], nil) }
             guard let d = decode(line) else { return nil }
             let msg = d["message"] as? [String: Any] ?? [:]
             var text = msg["content"] as? String ?? ""
             if let parts = msg["content"] as? [[String: Any]] {
                 text = parts.compactMap { $0["text"] as? String }.joined(separator: " ")
             }
-            return (text.contains("[Request interrupted by user") ? .done : .working, since, [])
+            return (text.contains("[Request interrupted by user") ? .done : .working, since, [], nil)
         }
     }
 
@@ -1136,7 +1141,7 @@ final class ClaudeReader {
             }
             if isTurn(top) {
                 let since = parseISO(top.string(Key.timestamp.rawValue)) ?? f.mtime
-                next.turn = (top.string(Key.type.rawValue) == "system" ? .done : .working, since, [])
+                next.turn = (top.string(Key.type.rawValue) == "system" ? .done : .working, since, [], nil)
                 haveTurn = true
             }
             return true
@@ -1236,7 +1241,8 @@ final class ClaudeReader {
             turnOpen: last != nil && d["postTurnSummaryFor"] as? String != last,
             cwd: d["cwd"] as? String ?? "",
             permissionMode: d["permissionMode"] as? String ?? "",
-            errorAt: d["error"] != nil ? ms("errorAt") : nil))
+            errorAt: d["error"] != nil ? ms("errorAt") : nil,
+            error: d["error"] as? String ?? ""))
     }
 
     /// Claude.app's own session list, keyed by transcript id: its deep links take the
@@ -1297,7 +1303,7 @@ final class ClaudeReader {
                 pending[sid] = s.tools
                 out[sid] = Session(agent: .claude, sid: sid, status: s.status, since: s.since,
                                    title: (a?.title).flatMap { $0.isEmpty ? nil : $0 } ?? s.title,
-                                   project: s.cwd, appID: a?.appID ?? "")
+                                   project: s.cwd, appID: a?.appID ?? "", fault: s.fault)
             }
             for d in p.dirs {
                 let sub = dir + "/" + d + "/subagents"
@@ -1342,7 +1348,7 @@ final class ClaudeReader {
         for (sid, a) in app where !a.archived {
             if a.turnOpen, now.timeIntervalSince(a.activity) <= Self.appTurnLive {
                 if var o = out[sid] {
-                    if o.status != .needsYou, a.activity > o.since { o.status = .working; o.since = a.activity }
+                    if o.status != .needsYou, a.activity > o.since { o.status = .working; o.since = a.activity; o.fault = nil }
                     out[sid] = o
                 } else {
                     out[sid] = Session(agent: .claude, sid: sid, status: .working, since: a.activity,
@@ -1350,9 +1356,8 @@ final class ClaudeReader {
                 }
             }
             guard var o = out[sid] else { continue }
-            if let e = a.errorAt, e >= o.since, now.timeIntervalSince(e) <= recentWindow {
-                o.status = .error
-                o.since = e
+            if let e = a.errorAt, e >= o.since, now.timeIntervalSince(e) <= recentWindow, let f = Fault(message: a.error) {
+                o.fail(f, at: e)
             }
             // Permission prompts are never written to disk. In a mode that can prompt,
             // a tool call left unanswered this long is almost always one.
@@ -1521,7 +1526,7 @@ final class CursorReader {
     static let activeWindow: TimeInterval = 600   // a checkpoint this recent with no turn end counts as running
     static let endSlack: TimeInterval = 30         // turn_ended can land just before the final checkpoint
 
-    private struct Transcript { var info: FileInfo; var status: Status; var title: String }
+    private struct Transcript { var info: FileInfo; var status: Status; var title: String; var fault: Fault? }
 
     private var transcripts: [String: Transcript] = [:]
     private var workspaces: [String: String] = [:]
@@ -1546,18 +1551,23 @@ final class CursorReader {
         let old = transcripts[f.path]
         if let old, f.same(old.info) { return old }
         var status = Status.working
+        var fault: Fault?
         let fd = open(f.path, O_RDONLY)
         if fd >= 0 {
             _ = LineReader.reverse(fd, from: 0, to: f.size) { line in
                 guard let last = decode(line) else { return true }
-                status = last["type"] as? String == "turn_ended" ? (last["status"] as? String == "error" ? .error : .done) : .working
+                if last["type"] as? String == "turn_ended" {
+                    // Cursor ends a turn you cancelled with an error too.
+                    if last["status"] as? String == "error" { fault = Fault(message: last["error"] as? String ?? "") }
+                    status = fault?.status ?? .done
+                }
                 return false
             }
             close(fd)
         }
         var title = old.flatMap { $0.info.ino == f.ino && f.size >= $0.info.size ? $0.title : nil } ?? ""
         if title.isEmpty { title = Self.title(f.path) }
-        let t = Transcript(info: f, status: status, title: title)
+        let t = Transcript(info: f, status: status, title: title, fault: fault)
         transcripts[f.path] = t
         return t
     }
@@ -1622,7 +1632,7 @@ final class CursorReader {
     func scan(now: Date, changes: Changes) -> [Session] {
         tree.begin(changes)
         defer { tree.end() }
-        var fromFiles: [String: (Status, Date, String, String)] = [:]
+        var fromFiles: [String: (Status, Date, String, String, Fault?)] = [:]
         let top = tree.node(root, changes, root: true, want: { _ in false })
         var seen: Set<String> = []
         for project in top?.dirs ?? [] {
@@ -1634,7 +1644,7 @@ final class CursorReader {
                       let f = n.files.first?.info, now.timeIntervalSince(f.mtime) <= recentWindow else { continue }
                 seen.insert(f.path)
                 let r = transcript(f)
-                fromFiles[sid] = (r.status, f.mtime, r.title, project)
+                fromFiles[sid] = (r.status, f.mtime, r.title, project, r.fault)
             }
         }
         if seen.count < transcripts.count { transcripts = transcripts.filter { seen.contains($0.key) } }
@@ -1643,7 +1653,7 @@ final class CursorReader {
         var out: [Session] = []
         for sid in Set(fromFiles.keys).union(headers.keys) {
             let h = headers[sid] ?? [:]
-            var (status, since, title, folder) = fromFiles[sid] ?? (.working, .distantPast, "", "")
+            var (status, since, title, folder, fault) = fromFiles[sid] ?? (.working, .distantPast, "", "", nil)
             let ws = (((h["workspaceIdentifier"] as? [String: Any])?["uri"] as? [String: Any])?["fsPath"] as? String)
                 ?? (folder.isEmpty ? "" : workspace(folder))
             let ms = max((h["conversationCheckpointLastUpdatedAt"] as? NSNumber)?.doubleValue ?? 0,
@@ -1652,7 +1662,7 @@ final class CursorReader {
             if h["hasBlockingPendingActions"] as? Bool == true {
                 status = .needsYou
                 since = max(activity, since)
-            } else if fromFiles[sid] != nil, status == .done || status == .error, since >= activity.addingTimeInterval(-Self.endSlack) {
+            } else if fromFiles[sid] != nil, [.done, .error, .blocked].contains(status), since >= activity.addingTimeInterval(-Self.endSlack) {
             } else if activity > since, now.timeIntervalSince(activity) <= Self.activeWindow {
                 status = .working
                 since = activity
@@ -1661,7 +1671,7 @@ final class CursorReader {
             }
             out.append(Session(agent: .cursor, sid: sid, status: status, since: since,
                                title: (h["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title,
-                               project: ws, appID: ""))
+                               project: ws, appID: "", fault: status == .error || status == .blocked ? fault : nil))
         }
         if top == nil && headerCache.map({ $0.key[0] == nil }) ?? true {
             state = .notInstalled

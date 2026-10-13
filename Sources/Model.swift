@@ -43,7 +43,9 @@ enum Agent: String, CaseIterable {
 
 /// Ordered by urgency: the switcher and the menu bar count read this order.
 enum Status: Int, Comparable {
-    case needsYou, error, working, done, idle
+    /// `blocked`: stopped by a usage limit or a lapsed sign-in. It stops every
+    /// session on the account and nothing in this one fixes it, so it doesn't ask for you.
+    case needsYou, error, working, done, blocked, idle
 
     static func < (a: Status, b: Status) -> Bool { a.rawValue < b.rawValue }
 
@@ -53,6 +55,7 @@ enum Status: Int, Comparable {
         case .error: return "Error"
         case .working: return "Working"
         case .done: return "Done"
+        case .blocked: return "Stopped"
         case .idle: return "Idle"
         }
     }
@@ -63,6 +66,7 @@ enum Status: Int, Comparable {
         case .error: return .systemRed
         case .working: return .secondaryLabelColor
         case .done: return .systemGreen
+        case .blocked: return .systemGray
         case .idle: return .tertiaryLabelColor
         }
     }
@@ -71,8 +75,61 @@ enum Status: Int, Comparable {
         switch self {
         case .needsYou, .error: return .attention
         case .working: return .working
-        case .done, .idle: return .recent
+        case .done, .blocked, .idle: return .recent
         }
+    }
+}
+
+/// Why a session stopped on an error, grouped by what fixes it. A usage limit or a
+/// lapsed sign-in stops the whole account; a dropped connection, a failing API or a
+/// refused request stops this session until you retry or change something in it.
+struct Fault: Equatable {
+    enum Kind { case limit, signedOut, connection, server, other }
+
+    let kind: Kind
+    let message: String
+
+    /// `code` is Claude Code's own error type, when the record has one. Nil when the
+    /// "error" is a turn you cancelled yourself, which Cursor records as one.
+    init?(code: String? = nil, message: String) {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let m = text.lowercased()
+        func has(_ words: String...) -> Bool { words.contains { m.contains($0) } }
+        if m == "canceled" || m == "cancelled" || has("user aborted", "aborted by user", "interrupted by user") { return nil }
+        self.message = text
+        if code == "rate_limit" || code == "billing_error"
+            || has("hit your", "usage limit", "rate limit", "spend limit", "quota", "resource_exhausted", "credit balance") {
+            kind = .limit
+        } else if code == "authentication_failed"
+            || has("authenticate", "/login", "login expired", "log in again", "sign in again", "oauth", "invalid api key", "401") {
+            kind = .signedOut
+        } else if has("connection", "connect to", "can't reach", "cannot reach", "enotfound", "getaddrinfo", "econn",
+                      "socket", "ssl", "network", "timeout", "timed out", "[unavailable]") {
+            kind = .connection
+        } else if code == "server_error" || has("overloaded", "server error", "server-side", "bad gateway", " 500", " 502", " 503", " 529") {
+            kind = .server
+        } else {
+            kind = .other
+        }
+    }
+
+    var status: Status { kind == .limit || kind == .signedOut ? .blocked : .error }
+
+    var label: String {
+        switch kind {
+        case .limit: return "Out of usage"
+        case .signedOut: return "Signed out"
+        case .connection: return "Connection lost"
+        case .server: return "API error"
+        case .other: return "Error"
+        }
+    }
+
+    /// When a usage limit lifts, as the agent wrote it: "6pm", "Oct 15, 12pm".
+    var resets: String? {
+        guard kind == .limit, let r = message.range(of: "resets ", options: .caseInsensitive) else { return nil }
+        let when = message[r.upperBound...].prefix { $0 != "(" && $0 != "·" && !$0.isNewline }.trimmingCharacters(in: .whitespaces)
+        return when.isEmpty ? nil : when
     }
 }
 
@@ -136,8 +193,17 @@ struct Session: Equatable {
     var costPartial = false  // some tokens came from models with no known price
     var unread = false       // finished since you last opened it
     var promptID: UUID?      // a prompt waiting in Muster for your answer
+    var fault: Fault?        // why it stopped, while status is .error or .blocked
 
     var id: String { "\(agent.rawValue):\(sid)" }
+
+    var stateLabel: String { fault?.label ?? status.label }
+
+    mutating func fail(_ f: Fault, at: Date) {
+        fault = f
+        status = f.status
+        since = at
+    }
 
     var displayTitle: String {
         if !title.isEmpty { return title }

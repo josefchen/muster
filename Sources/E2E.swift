@@ -328,6 +328,7 @@ enum E2E {
         case .error: return "error"
         case .working: return "working"
         case .done: return "done"
+        case .blocked: return "blocked"
         case .idle: return "idle"
         }
     }
@@ -336,7 +337,7 @@ enum E2E {
         let sessions: [[String: Any]] = Store.shared.sessions.map { s in
             ["id": s.id, "agent": s.agent.rawValue, "sid": s.sid, "status": name(s.status), "unread": s.unread,
              "promptID": s.promptID?.uuidString ?? NSNull(), "since": s.since.timeIntervalSince1970, "appID": s.appID,
-             "project": s.project, "title": s.title, "tokens": s.tokens]
+             "project": s.project, "title": s.title, "tokens": s.tokens, "fault": s.fault?.label ?? NSNull()]
         }
         let prompts: [[String: Any]] = Prompts.shared.pending.values.sorted { $0.created < $1.created }.map { p in
             var d: [String: Any] = ["id": p.id.uuidString, "agent": p.agent.rawValue, "sid": p.sessionID, "blocksNative": p.blocksNative]

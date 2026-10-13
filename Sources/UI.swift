@@ -142,11 +142,12 @@ final class SessionRow: Flipped {
             if detail.attributedStringValue != line { detail.attributedStringValue = line }
         } else {
                 detail.attributedStringValue = NSAttributedString(string: "")
-            set(detail, [s.agent.name, s.projectName, age(s.since, now: now)].filter { !$0.isEmpty }.joined(separator: "  ·  "))
+            let when = s.fault?.resets.map { "resets \($0)" } ?? age(s.since, now: now)
+            set(detail, [s.agent.name, s.projectName, when].filter { !$0.isEmpty }.joined(separator: "  ·  "))
             detail.font = .systemFont(ofSize: 12)
             detail.textColor = .secondaryLabelColor
         }
-        set(state, s.status.label)
+        set(state, s.stateLabel)
         state.textColor = s.status == .working ? .secondaryLabelColor : s.status.colour
         let working = s.status == .working
         stateDot.layer?.backgroundColor = (working ? s.agent.colour : s.status.colour).cgColor
@@ -164,11 +165,13 @@ final class SessionRow: Flipped {
             stateDot.layer?.removeAnimation(forKey: "breathe")
         }
         set(tokens, prompt.map(Self.answerHint) ?? Self.usageText(s))
-        toolTip = s.cost.map { "≈ \(money($0)) at API list prices\(s.costPartial ? " (some models unpriced)" : "") · \(s.tokens.formatted()) tokens" }
+        let cost = s.cost.map { "≈ \(money($0)) at API list prices\(s.costPartial ? " (some models unpriced)" : "") · \(s.tokens.formatted()) tokens" }
+        let tip = [s.fault?.message, cost].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+        toolTip = tip.isEmpty ? nil : tip
         unreadDot.isHidden = !s.unread
         setAccessibilityElement(true)
         setAccessibilityRole(.button)
-        setAccessibilityLabel([s.agent.name, s.displayTitle, s.status.label, s.unread ? "unread" : "",
+        setAccessibilityLabel([s.agent.name, s.displayTitle, s.stateLabel, s.fault?.resets.map { "resets \($0)" } ?? "", s.unread ? "unread" : "",
                                s.cost.map { "about \(money($0)) at API prices" } ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))
         needsLayout = true
     }

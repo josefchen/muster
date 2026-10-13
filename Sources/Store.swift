@@ -137,6 +137,7 @@ final class Store {
             if let p = Prompts.shared.prompt(for: s) {
                 s.promptID = p.id
                 s.status = .needsYou
+                s.fault = nil
             }
             return s
         } + orphanPrompts(found)
