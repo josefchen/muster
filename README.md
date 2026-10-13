@@ -13,7 +13,8 @@
   <a href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg"><b>Download for Mac</b></a> ·
   <code>brew install --cask josefchen/tap/muster</code> ·
   <a href="https://agentmuster.app">agentmuster.app</a> ·
-  <a href="CHANGELOG.md">Changelog</a>
+  <a href="CHANGELOG.md">Changelog</a> ·
+  <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 <p align="center">
