@@ -658,6 +658,7 @@ final class App {
     var ui = false
     var arguments: [String] = []
     private(set) var process: Process?
+    private var launchFailure: String?
 
     var pid: pid_t { process?.processIdentifier ?? 0 }
     var alive: Bool { process?.isRunning == true }
@@ -703,6 +704,7 @@ final class App {
     /// (demo mode runs no hook server).
     @discardableResult
     func launch(timeout: Double = 15, hooks: Bool = true) -> Bool {
+        launchFailure = nil
         for _ in 0..<3 {
             controlPort = Net.freePorts(avoiding: hookBase...hookBase + 19)
             let env = environment()
@@ -733,11 +735,29 @@ final class App {
                 }
                 pause(0.05)
             }
-            if p.isRunning { kill9() }
+            if p.isRunning {
+                launchFailure = "startup readiness timed out after \(Int(timeout)) seconds"
+                captureStartupSample()
+                kill9()
+            }
             p.waitUntilExit()
             if p.terminationStatus != 75 { return false }   // 75: the control port was taken; try another
         }
         return false
+    }
+
+    /// Preserve a stuck process's stack before stopping it. Only fixture logs are copied.
+    private func captureStartupSample() {
+        guard let directory = ProcessInfo.processInfo.environment["MUSTER_E2E_DIAGNOSTICS"], !directory.isEmpty else { return }
+        try? FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        let prefix = directory + "/startup-\(pid)"
+        let sample = Process()
+        sample.executableURL = URL(fileURLWithPath: "/usr/bin/sample")
+        sample.arguments = [String(pid), "1", "-file", prefix + ".sample.txt"]
+        sample.standardOutput = FileHandle.nullDevice
+        sample.standardError = FileHandle.nullDevice
+        if (try? sample.run()) != nil { sample.waitUntilExit() }
+        try? FileManager.default.copyItem(atPath: fixture.appLog, toPath: prefix + ".log")
     }
 
     func state() -> State? {
@@ -780,6 +800,7 @@ final class App {
     }
 
     var exitDescription: String {
+        if let launchFailure { return launchFailure }
         guard let p = process, !p.isRunning else { return "running" }
         let s = p.terminationStatus
         if p.terminationReason == .uncaughtSignal { return "killed by signal \(s)" }

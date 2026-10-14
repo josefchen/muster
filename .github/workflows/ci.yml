@@ -4,8 +4,19 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      prebuilt_run:
+        description: 'Diagnose Intel startup using the e2e artifact from this run ID (leave empty for full CI)'
+        type: string
+        default: ''
+permissions:
+  contents: read
+  actions: read
+env:
+  MUSTER_E2E_DIAGNOSTICS: ${{ github.workspace }}/e2e-diagnostics
 jobs:
   build:
+    if: ${{ !inputs.prebuilt_run }}
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
@@ -28,6 +39,43 @@ jobs:
           name: e2e
           path: e2e.tgz
           retention-days: 3
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: diagnostics-build
+          path: e2e-diagnostics
+          retention-days: 3
+
+  diagnose-intel:
+    if: ${{ inputs.prebuilt_run != '' && inputs.prebuilt_run != null }}
+    runs-on: macos-26-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          name: e2e
+          run-id: ${{ inputs.prebuilt_run }}
+          github-token: ${{ github.token }}
+      - name: Verify the app matches, then rebuild the diagnostic driver
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.prebuilt_run }}
+        run: |
+          source_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN" --jq .head_sha)
+          git diff --exit-code "$source_sha" -- Sources Resources CHANGELOG.md
+          tar -xzf e2e.tgz
+          swiftc -O -swift-version 5 -target x86_64-apple-macos14 -o dist/driver Tests/e2e/*.swift
+      - name: End-to-end
+        run: scripts/e2e.sh --prebuilt dist
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: diagnostics-intel
+          path: e2e-diagnostics
+          retention-days: 3
 
   # The same suite on every macOS Muster supports, on Apple silicon and on Intel.
   other-macs:
@@ -44,6 +92,12 @@ jobs:
           name: e2e
       - name: End-to-end
         run: tar -xzf e2e.tgz && scripts/e2e.sh --prebuilt dist
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: diagnostics-${{ matrix.os }}
+          path: e2e-diagnostics
+          retention-days: 3
       # The suite runs headless; these show what the panels look like on this Mac.
       - name: Screenshots
         if: always()
