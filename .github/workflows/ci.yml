@@ -77,6 +77,27 @@ jobs:
           path: e2e-diagnostics
           retention-days: 3
 
+  website:
+    if: ${{ !inputs.prebuilt_run }}
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - name: Privacy and aggregate-counter tests
+        run: node --test site/tests/*.test.js
+      - name: Build the complete site
+        run: scripts/site.sh
+      - name: Validate Worker types and deployment
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          npx --yes wrangler@4.151.0 types --config site/wrangler.jsonc site/worker-configuration.d.ts
+          npx --yes --package typescript@5.9.3 tsc -p site/tsconfig.json
+          npx --yes wrangler@4.151.0 deploy --dry-run --config site/wrangler.jsonc
+
   # The same suite on every macOS Muster supports, on Apple silicon and on Intel.
   other-macs:
     needs: build

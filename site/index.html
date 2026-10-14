@@ -11,7 +11,7 @@
 <meta property="og:site_name" content="Muster">
 <meta property="og:url" content="https://agentmuster.app/">
 <meta property="og:title" content="Muster: never keep an agent waiting">
-<meta property="og:description" content="See which Claude, Codex or Cursor session needs you, answer it from anywhere, and jump to it with ⌥Tab. Free and open source.">
+<meta property="og:description" content="See which Claude Code, Codex or Cursor session needs you. Answer supported requests from the alert and switch sessions with ⌥Tab. Free and open source.">
 <meta property="og:image" content="https://agentmuster.app/media/social-preview.png">
 <meta property="og:image:width" content="1280">
 <meta property="og:image:height" content="640">
@@ -25,7 +25,7 @@
  "applicationCategory": "DeveloperApplication", "applicationSubCategory": "Productivity", "operatingSystem": "macOS 14 or later",
  "url": "https://agentmuster.app/", "downloadUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg",
  "installUrl": "https://github.com/josefchen/muster/releases/latest/download/Muster.dmg",
- "softwareVersion": "1.2.0", "releaseNotes": "https://agentmuster.app/changelog", "fileSize": "2 MB",
+ "softwareVersion": "1.3.2", "releaseNotes": "https://agentmuster.app/changelog",
  "image": "https://agentmuster.app/media/social-preview.png",
  "screenshot": ["https://agentmuster.app/media/alert-dark.jpg", "https://agentmuster.app/media/peek-light.jpg", "https://agentmuster.app/media/switcher-dark.jpg", "https://agentmuster.app/media/appearance.jpg"],
  "featureList": ["See which Claude Code, Codex or Cursor session needs you", "Allow or deny a command from an alert without switching apps",
@@ -45,7 +45,7 @@
 </script>
 <style>
   :root {
-    --bg: #fbfbfd; --fg: #1d1d1f; --dim: #6e6e73; --faint: #8e8e93; --line: rgba(0,0,0,.08); --wire: rgba(0,0,0,.16);
+    --bg: #fbfbfd; --fg: #1d1d1f; --dim: #6e6e73; --faint: #6e6e73; --line: rgba(0,0,0,.08); --wire: rgba(0,0,0,.16);
     --nav: rgba(251,251,253,.72); --pill: rgba(0,0,0,.06); --pill-hover: rgba(0,0,0,.1);
     --btn: #1d1d1f; --btn-fg: #fff; --btn-hover: #000;
     --glass: rgba(255,255,255,.72); --glass-edge: rgba(255,255,255,.9);
@@ -62,7 +62,7 @@
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #5c5c64; --line: rgba(255,255,255,.08); --wire: rgba(255,255,255,.16);
+      --bg: #08080b; --fg: #f5f5f7; --dim: #8e8e96; --faint: #8e8e96; --line: rgba(255,255,255,.08); --wire: rgba(255,255,255,.16);
       --nav: rgba(8,8,11,.72); --pill: rgba(255,255,255,.1); --pill-hover: rgba(255,255,255,.16);
       --btn: #f5f5f7; --btn-fg: #000; --btn-hover: #fff;
       --glass: rgba(255,255,255,.05); --glass-edge: rgba(255,255,255,.1);
@@ -115,6 +115,16 @@
   .ghost { display: inline-flex; align-items: center; padding: 13px 22px; border-radius: 14px; font-size: 16px; font-weight: 600;
            border: 1px solid var(--line); background: var(--glass); }
   .ghost:hover { border-color: var(--wire); }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 3px solid var(--orange); outline-offset: 5px; }
+  .skip { position: fixed; top: -60px; left: 16px; z-index: 30; padding: 10px 16px; border-radius: 10px; background: var(--btn); color: var(--btn-fg); }
+  .skip:focus { top: 10px; }
+  .community { margin-top: 22px; }
+  .star-link { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--dim); transition: color .15s; }
+  .star-link:hover { color: var(--fg); }
+  .star-link > span:first-child { color: var(--orange); }
+  .star-link b { font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; }
+  .star-separator { margin: 0 8px; color: var(--faint); }
   .meta { margin-top: 18px; font-size: 13px; color: var(--faint); }
 
   .stage { position: relative; margin: 64px auto 0; max-width: 760px; }
@@ -313,6 +323,7 @@
             background: var(--glass); color: var(--dim); font-size: 16px; }
   .notmac b { color: var(--fg); }
   .notmac .btn { margin-top: 14px; }
+  .notmac .btn b { color: inherit; }
   .other .dl { display: none !important; }
   .other nav .gh { display: inline; }
   .other .notmac { display: block; }
@@ -353,11 +364,12 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .js .reveal { opacity: 1; transform: none; transition: none; }
-    .js .diagram.in .wire b { animation: none; }
+    *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
   }
 </style>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <nav><div class="wrap">
   <a class="brand" href="/"><img src="/media/icon.png" alt="">Muster</a>
   <div class="links">
@@ -367,11 +379,12 @@
   </div>
 </div></nav>
 
+<main id="main">
 <header><div class="wrap">
   <img class="icon" src="/media/icon.png" alt="Muster">
   <a class="pillink" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Free and open source</a>
   <h1>Never keep an<br>agent <span>waiting.</span></h1>
-  <p class="lede">Muster tells you the moment Claude Code, Codex or Cursor needs you, and lets you answer with one keystroke, from whatever you're doing.</p>
+  <p class="lede">See which Claude Code, Codex or Cursor session needs you. Answer supported requests from the alert, or jump straight to the waiting session.</p>
   <div class="ctas dl">
     <a class="btn" href="https://github.com/josefchen/muster/releases/latest/download/Muster.dmg">
       <svg viewBox="0 0 17 20" fill="currentColor" aria-hidden="true"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8 1.6 0 2 .8 3.4.8 1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM11.6 3c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
@@ -382,8 +395,9 @@
     </button>
   </div>
   <div class="notmac"><b>Muster is a Mac app.</b> Open this page on your Mac to download it, or star it on GitHub to find it later.<br>
-    <a class="btn" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Star on GitHub</a></div>
-  <p class="meta">Notarized by Apple · macOS 14 or later · 2 MB</p>
+    <a class="btn" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Star on GitHub <span data-star-count hidden>· <b data-star-number></b></span></a></div>
+  <div class="community dl"><a class="star-link" href="https://github.com/josefchen/muster"><span aria-hidden="true">★</span><span data-star-count hidden><b data-star-number></b> stars<span class="star-separator">·</span></span>Star on GitHub <span aria-hidden="true">↗</span></a></div>
+  <p class="meta">Free · Notarized by Apple · macOS 14+ · Apple silicon &amp; Intel</p>
   <div class="scene reveal" role="img" aria-label="While you work in an editor, Claude Code and then Codex each ask to run a command. Muster's alert brings both questions to the top of the screen, and two presses of Option-Return answer them.">
     <div class="desk" aria-hidden="true">
       <div class="menubar">
@@ -464,10 +478,10 @@
 </section>
 
 <section class="wrap numbers reveal" aria-label="Muster in numbers">
-  <div><b>2 MB</b><span>to download</span></div>
-  <div><b>0.4%</b><span>of one core, with ten agents busy</span></div>
-  <div><b>20 MB</b><span>of memory</span></div>
-  <div><b>0</b><span>accounts or trackers</span></div>
+  <div><b>3</b><span>coding agents, one place</span></div>
+  <div><b>⌥Tab</b><span>straight to the waiting session</span></div>
+  <div><b>14+</b><span>macOS, Apple silicon or Intel</span></div>
+  <div><b>MIT</b><span>free and open source</span></div>
 </section>
 
 <section class="wrap split reveal">
@@ -491,13 +505,13 @@
 <section class="wrap center">
   <div class="reveal">
     <h2>Made for the Mac.</h2>
-    <p>Muster is a native AppKit app and a 2 MB download. It uses the system's own glass and follows your light or dark appearance.</p>
+    <p>Muster is a small native AppKit app. It uses the system's own glass and follows your light or dark appearance.</p>
     <div class="appearance"><img src="/media/appearance.jpg" width="1440" height="1264" alt="The switcher, half in dark mode and half in light mode" loading="lazy"></div>
   </div>
   <div class="details reveal">
     <div><h3>Opens the right window</h3><p>Claude's app, the Codex thread, Cursor's Agents window, or the terminal a CLI session runs in.</p></div>
     <div><h3>Remote sessions too</h3><p>Claude Code sessions that the desktop app runs over SSH show up next to your local ones.</p></div>
-    <div><h3>Answers on the banner</h3><p>Notifications carry Allow and Deny, or the options to a question.</p></div>
+    <div><h3>Answers in the alert</h3><p>Allow or deny supported Claude Code and Codex requests. Claude Code questions show their answer options.</p></div>
     <div><h3>Your shortcuts</h3><p>Change ⌥Tab and ⌃⌥Space. Muster tells you if another app already uses one.</p></div>
     <div><h3>Raycast and Alfred</h3><p><code>muster://next</code> opens the session that needs you most. <code>muster://search</code> opens search.</p></div>
     <div><h3>Unread until you look</h3><p>A finished session stays marked until you open it.</p></div>
@@ -508,7 +522,7 @@
 </section>
 
 <section class="wrap center reveal" id="how">
-  <h2>Nothing leaves your Mac.</h2>
+  <h2>Your sessions stay<br>on your Mac.</h2>
   <p>Muster reads the session files your agents already write. An agent's question reaches Muster over localhost, and your answer goes back the same way. There's no account and no analytics. The only thing it asks the internet is whether there's a new version, once a day, if you say yes in the tour.</p>
   <div class="diagram" role="img" aria-label="Claude Code, Codex and Cursor on your Mac. Muster reads their session files, and questions and answers travel between them over 127.0.0.1.">
     <div class="scope">Your Mac</div>
@@ -530,7 +544,7 @@
 
 <section class="wrap center reveal oss" id="open-source">
   <h2>Open source, because<br>it can say yes for you.</h2>
-  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed, and every release passes 213 end-to-end tests that drive the real app before it ships.</p>
+  <p>An app that can approve what your agents run should be one you can read. Muster is MIT licensed. Its tests exercise the real app with fixture sessions, including approvals, questions and recovery when a connection drops.</p>
   <a class="ghost" href="https://github.com/josefchen/muster"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Read the code on GitHub</a>
 </section>
 
@@ -559,9 +573,10 @@
   </div>
 </div></div>
 
+</main>
 <footer><div class="wrap">
   <span>Muster is an independent project, not affiliated with Anthropic, OpenAI or Anysphere.</span>
-  <span><a href="/changelog">Changelog</a> · <a href="/guides/claude-code-notifications-mac">Claude Code notifications</a> · <a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
+  <span><a href="/privacy">Privacy</a> · <a href="/changelog">Changelog</a> · <a href="/guides/claude-code-notifications-mac">Claude Code notifications</a> · <a href="https://github.com/josefchen/muster">GitHub</a> · <a href="https://github.com/josefchen/muster/blob/main/LICENSE">MIT License</a></span>
 </div></footer>
 
 <script>
@@ -591,9 +606,18 @@
     navigator.clipboard.writeText(b.dataset.copy).then(() => {
       const em = b.querySelector('em');
       em.textContent = 'Copied';
+      document.dispatchEvent(new Event('muster:brew-copied'));
       setTimeout(() => em.textContent = 'Copy', 1600);
+    }).catch(() => {
+      const em = b.querySelector('em');
+      em.textContent = 'Select to copy';
+      const range = document.createRange();
+      range.selectNodeContents(b.querySelector('b'));
+      const selection = window.getSelection();
+      selection.removeAllRanges(); selection.addRange(range);
     });
   }));
 </script>
+<script src="/site.js" defer></script>
 </body>
 </html>

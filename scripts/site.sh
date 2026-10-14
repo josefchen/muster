@@ -17,7 +17,7 @@ OUT="$SITE/dist"
 INDEXNOW=0098e4e4ada21f8e00e95ff19d4823e7
 
 rm -rf "$OUT" && mkdir -p "$OUT/media" "$OUT/guides"
-cp "$SITE/index.html" "$SITE/404.html" "$SITE/robots.txt" "$SITE/llms.txt" "$SITE/page.css" "$SITE/_headers" \
+cp "$SITE/index.html" "$SITE/404.html" "$SITE/robots.txt" "$SITE/llms.txt" "$SITE/page.css" "$SITE/privacy.html" "$SITE/_headers" \
   "$SITE/$INDEXNOW.txt" "$OUT/"
 cp "$SITE"/guides/*.html "$OUT/guides/"
 # The changelog page and its feed from CHANGELOG.md, and the version the landing page names.
@@ -26,7 +26,11 @@ cp "$SITE"/guides/*.html "$OUT/guides/"
 LATEST="$("$HERE/scripts/changelog.sh" latest)"
 VERSION="${LATEST% *}"
 RELEASED="${LATEST#* }"
-sed -i '' "s/\"softwareVersion\": \"[0-9.]*\"/\"softwareVersion\": \"$VERSION\"/" "$OUT/index.html"
+python3 - "$OUT/index.html" "$VERSION" <<'PYVERSION'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+path.write_text(re.sub(r'"softwareVersion": "[0-9.]+"', '"softwareVersion": "' + sys.argv[2] + '"', path.read_text()))
+PYVERSION
 
 # The sitemap, each page dated by its last commit, or today while it has changes.
 changed() {
@@ -37,6 +41,7 @@ changed() {
   echo '<?xml version="1.0" encoding="UTF-8"?>'
   echo '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
   echo "  <url><loc>https://agentmuster.app/</loc><lastmod>$(changed site/index.html)</lastmod></url>"
+  echo "  <url><loc>https://agentmuster.app/privacy</loc><lastmod>$(changed site/privacy.html)</lastmod></url>"
   echo "  <url><loc>https://agentmuster.app/changelog</loc><lastmod>$RELEASED</lastmod></url>"
   for f in "$SITE"/guides/*.html; do
     name="$(basename "$f" .html)"
