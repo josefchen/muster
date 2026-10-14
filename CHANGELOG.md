@@ -2,6 +2,17 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
+## 1.3.2 · 2026-10-14
+
+Each request reaches you once, Codex's questions show up, and answering setup checks itself.
+
+- <!-- bell.slash --> **No more doubled alerts.** While the alert is on, Muster no longer also posts a banner for the same request. Banners when a session finishes are off unless you turn them on, since Claude's and Codex's apps already announce it.
+- <!-- questionmark.bubble --> **Codex's questions show up.** When Codex asks you something, the alert and the switcher show the question, and ⌥Tab takes you to it. Codex has no hook for questions, so you answer them in Codex.
+- <!-- checkmark.seal --> **Answering setup checks itself.** The tour and Settings show whether each agent's hook is really connected. For Codex, Muster reads whether its hook is enabled and trusted, and a test request confirms the whole round trip.
+- <!-- arrow.down.circle --> **Hear about new versions.** The tour and What's New offer a once-a-day check, so the next fix reaches you.
+- <!-- app.dashed --> **Icons without the apps.** Claude Code or Codex used only in a terminal gets a drawn icon instead of a blank space.
+- <!-- macwindow --> **Cleaner on macOS 14 and 15.** The alert no longer turns brown on the glass macOS used before Liquid Glass.
+
 ## 1.3.1 · 2026-10-13
 
 Clearer when Muster can't answer for you yet.
