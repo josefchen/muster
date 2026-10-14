@@ -14,3 +14,4 @@ site/www/.wrangler/
 site/worker-configuration.d.ts
 __pycache__/
 /.wrangler/
+.taste-skill/
