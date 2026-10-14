@@ -1376,7 +1376,8 @@ final class ClaudeReader {
 // MARK: - Codex (desktop app and CLI)
 
 final class CodexReader {
-    private static let eventKeys = ["token_count", "task_started", "task_complete", "turn_aborted", "turn_context"].map { Array($0.utf8) }
+    private static let eventKeys = ["token_count", "task_started", "task_complete", "turn_aborted", "turn_context",
+                                    "request_user_input_async", "send_user_message_question_reply"].map { Array($0.utf8) }
 
     /// A rollout's state, kept current from the lines appended since the last scan.
     private struct Rollout {
@@ -1385,8 +1386,11 @@ final class CodexReader {
         var status: (Status, Date)?
         var model: String?
         var totals: [String: Any]?   // the newest running total_token_usage
+        /// A question Codex asked in its latest turn (request_user_input_async) that has no
+        /// reply yet. No hook covers these, so this is how Muster knows Codex is asking.
+        var question: (id: String, text: String, at: Date)?
 
-        var result: (Status, Date, [String: Usage])? {
+        var result: (Status, Date, [String: Usage], String?)? {
             guard let status else { return nil }
             // token_count carries running totals for the whole thread; the model comes
             // from the latest turn_context. Input includes the cached part.
@@ -1397,7 +1401,8 @@ final class CodexReader {
                 usage[model ?? "unknown"] = Usage(input: max(0, n("input_tokens") - cached - write), cacheWrite5m: write, cacheWrite1h: 0,
                                                   cacheRead: cached, output: n("output_tokens"))
             }
-            return (status.0, status.1, usage)
+            if let question { return (.needsYou, max(question.at, status.1), usage, question.text) }
+            return (status.0, status.1, usage, nil)
         }
     }
 
@@ -1424,10 +1429,25 @@ final class CodexReader {
         guard fd >= 0 else { return }
         defer { close(fd) }
         var next = r
-        var haveStatus = false, haveTotals = false, haveModel = false
+        var haveStatus = false, haveTotals = false, haveModel = false, haveQuestion = false
+        var replied: Set<String> = []   // call ids answered later in the file
         next.offset = LineReader.reverse(fd, from: r.offset, to: f.size) { line in
             guard Bytes.has(line, eventKeys), let d = decode(line) else { return true }
             let p = d["payload"] as? [String: Any]
+            if !haveQuestion {
+                // Newest first: a reply names the questions it answers; the newest question
+                // decides; reaching the start of the turn means it asked nothing.
+                if p?["type"] as? String == "message", let text = Self.text(p), text.contains("send_user_message_question_reply") {
+                    replied.formUnion(Self.callIDs(text))
+                } else if p?["type"] as? String == "function_call", p?["name"] as? String == "request_user_input_async" {
+                    let id = p?["call_id"] as? String ?? ""
+                    next.question = replied.contains(id) ? nil : (id, Self.question(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
+                    haveQuestion = true
+                } else if p?["type"] as? String == "task_started" {
+                    next.question = nil
+                    haveQuestion = true
+                }
+            }
             if !haveModel, d["type"] as? String == "turn_context", let m = p?["model"] as? String {
                 next.model = m
                 haveModel = true
@@ -1445,14 +1465,33 @@ final class CodexReader {
             default:
                 break
             }
-            return !(haveStatus && haveTotals && haveModel)
+            return !(haveStatus && haveTotals && haveModel && haveQuestion)
         }
+        // A reply appended later answers a question read on an earlier scan.
+        if let q = next.question, replied.contains(q.id) { next.question = nil }
         r = next
+    }
+
+    private static func text(_ p: [String: Any]?) -> String? {
+        (p?["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n")
+    }
+
+    private static func callIDs(_ text: String) -> Set<String> {
+        let words = text.split(whereSeparator: { !($0.isLetter || $0.isNumber || $0 == "_") })
+        return Set(words.filter { $0.hasPrefix("call_") }.map(String.init))
+    }
+
+    /// The first question's text, and how many more there are.
+    private static func question(_ arguments: String?) -> String {
+        let d = arguments.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
+        let qs = (d?["questions"] as? [[String: Any]] ?? []).compactMap { ($0["title"] ?? $0["question"]) as? String }
+        guard let first = qs.first else { return "Codex has a question" }
+        return qs.count > 1 ? "\(first) (and \(qs.count - 1) more)" : first
     }
 
     /// A rollout's state. Its path is whatever Codex stored, which needn't match how
     /// FSEvents names it, and there are only a few, so each is stat'd every scan.
-    private func rollout(_ path: String) -> (Status, Date, [String: Usage])? {
+    private func rollout(_ path: String) -> (Status, Date, [String: Usage], String?)? {
         var r = rollouts[path] ?? Rollout()
         guard let f = stat(path) else { rollouts[path] = nil; return nil }
         if !f.same(r.info) {
@@ -1504,6 +1543,7 @@ final class CodexReader {
             guard let res = rollout(r.path) else { return nil }
             var s = Session(agent: .codex, sid: r.id, status: res.0, since: res.1,
                             title: String(r.title.prefix(80)), project: r.cwd, appID: "")
+            s.asking = res.3
             s.account(res.2)
             return s
         }

@@ -55,7 +55,8 @@ func runHeadless(bundle: String, label: String) -> Never {
     let fx = Fixture()
     let seeded = Headless.seed(fx)
     let app = App(bundle: bundle, fixture: fx)
-    guard app.launch() else {
+    // A first launch can be slow while macOS scans the new binary, on Intel Macs especially.
+    guard app.launch(timeout: 60) else {
         appMessages(fx).forEach { note($0) }
         fx.cleanup()
         fatal("the app didn't start (\(app.exitDescription))")

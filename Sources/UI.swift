@@ -211,9 +211,14 @@ final class SessionRow: Flipped {
         } else {
                 detail.attributedStringValue = NSAttributedString(string: "")
             let when = s.fault?.resets.map { "resets \($0)" } ?? age(s.since, now: now)
-            set(detail, [s.agent.name, s.projectName, when].filter { !$0.isEmpty }.joined(separator: "  ·  "))
+            if let q = s.asking, s.status == .needsYou {
+                set(detail, "Asks: " + q)
+                detail.textColor = .labelColor
+            } else {
+                set(detail, [s.agent.name, s.projectName, when].filter { !$0.isEmpty }.joined(separator: "  ·  "))
+                detail.textColor = .secondaryLabelColor
+            }
             detail.font = .systemFont(ofSize: 12)
-            detail.textColor = .secondaryLabelColor
         }
         set(state, s.stateLabel)
         state.textColor = s.status == .working ? .secondaryLabelColor : s.status.colour
@@ -236,7 +241,7 @@ final class SessionRow: Flipped {
         }
         set(tokens, trailing ? prompt.map(Self.answerHint) ?? Self.usageText(s) : "")
         let cost = s.cost.map { "≈ \(money($0)) at API list prices\(s.costPartial ? " (some models unpriced)" : "") · \(s.tokens.formatted()) tokens" }
-        let tip = [s.fault?.message, cost].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let tip = [s.asking, s.fault?.message, cost].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         toolTip = tip.isEmpty ? nil : tip
         unreadDot.isHidden = !s.unread
         setAccessibilityElement(true)

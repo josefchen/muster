@@ -28,14 +28,40 @@ enum Agent: String, CaseIterable {
     }
 
     /// The app's own icon, loaded once and pinned to a small representation.
+    /// The agent's app icon, or a drawn one when the app isn't installed (Claude Code or
+    /// Codex used only in a terminal), so a row is never missing its icon.
     var icon: NSImage? {
         if let hit = Agent.icons[self] { return hit }
-        guard let url = bundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first
-        else { return nil }
-        let image = NSWorkspace.shared.icon(forFile: url.path)
+        let image: NSImage
+        if let url = bundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first {
+            image = NSWorkspace.shared.icon(forFile: url.path)
+        } else {
+            image = drawnIcon
+        }
         image.size = NSSize(width: 64, height: 64)
         Agent.icons[self] = image
         return image
+    }
+
+    /// A rounded tile in the agent's colour with a plain system symbol on it.
+    private var drawnIcon: NSImage {
+        let symbol: String
+        switch self {
+        case .claude: symbol = "asterisk"
+        case .codex: symbol = "chevron.left.forwardslash.chevron.right"
+        case .cursor: symbol = "cursorarrow.rays"
+        }
+        let colour = self.colour
+        return NSImage(size: NSSize(width: 64, height: 64), flipped: false) { r in
+            let tile = NSBezierPath(roundedRect: r.insetBy(dx: 4, dy: 4), xRadius: 13, yRadius: 13)
+            NSGradient(colors: [colour.blended(withFraction: 0.18, of: .white) ?? colour, colour])?.draw(in: tile, angle: -90)
+            let config = NSImage.SymbolConfiguration(pointSize: 26, weight: .semibold).applying(.init(paletteColors: [.white]))
+            if let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?.withSymbolConfiguration(config) {
+                let s = glyph.size
+                glyph.draw(in: NSRect(x: (r.width - s.width) / 2, y: (r.height - s.height) / 2, width: s.width, height: s.height))
+            }
+            return true
+        }
     }
 
     private static var icons: [Agent: NSImage] = [:]
@@ -193,6 +219,7 @@ struct Session: Equatable {
     var costPartial = false  // some tokens came from models with no known price
     var unread = false       // finished since you last opened it
     var promptID: UUID?      // a prompt waiting in Muster for your answer
+    var asking: String?      // a question the agent asked that only its own app can answer
     var fault: Fault?        // why it stopped, while status is .error or .blocked
 
     var id: String { "\(agent.rawValue):\(sid)" }

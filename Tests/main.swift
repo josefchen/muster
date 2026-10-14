@@ -119,6 +119,29 @@ let astra: Double = (astraInput + astraWrites + astraReads + astraOutput) / 1_00
 check(abs((codex.first?.cost ?? 0) - astra) < 1e-12,
       "cost splits fresh input, cache writes and cached input")
 
+// Codex asks questions with request_user_input_async, which no hook covers.
+let askRollout = "/ask/.codex/sessions/rollout-q.jsonl"
+write(askRollout, [
+    json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-60)), "payload": ["type": "task_started"]]),
+    json(["type": "response_item", "timestamp": iso(now.addingTimeInterval(-50)), "payload": [
+        "type": "function_call", "name": "request_user_input_async", "call_id": "call_q1",
+        "arguments": "{\"questions\":[{\"title\":\"Which database should the cache use?\"}]}"]]),
+    json(["type": "response_item", "payload": ["type": "function_call_output", "call_id": "call_q1", "output": "{\"accepted\":true}"]]),
+    json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-20)), "payload": ["type": "task_complete"]]),
+].joined(separator: "\n") + "\n")
+sqlite("/ask/.codex/state_5.sqlite", [
+    "CREATE TABLE threads (id TEXT, rollout_path TEXT, name TEXT, title TEXT, first_user_message TEXT, cwd TEXT, archived INT, updated_at_ms INT)",
+    "INSERT INTO threads VALUES ('q1', '\(root + askRollout)', '', 'Pick a store', '', '/work/store', 0, \(Int64(now.timeIntervalSince1970 * 1000)))",
+])
+let askReader = CodexReader(home: root + "/ask")
+let asked = askReader.scan(now: now).first
+check(asked?.status == .needsYou && asked?.asking == "Which database should the cache use?",
+      "a Codex question with no reply reads as needs you, with the question")
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [
+    ["type": "input_text", "text": "<send_user_message_question_reply>\n[{\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_q1\\\"]\"}]"]]]]) + "\n")
+let answeredAsk = askReader.scan(now: now).first
+check(answeredAsk?.status == .done && answeredAsk?.asking == nil, "…and once you reply in Codex, it no longer asks")
+
 print("Cursor")
 let header = json(["name": "Polish onboarding", "hasBlockingPendingActions": true,
                    "lastUpdatedAt": now.timeIntervalSince1970 * 1000, "workspaceIdentifier": ["uri": ["fsPath": "/work/web"]]])

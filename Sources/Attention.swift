@@ -17,7 +17,6 @@ final class Attention {
     private let panel = GlassPanel(cornerRadius: 22, canBecomeKey: false)
     private let surface = AlertSurface()
     private let row = SessionRow(frame: .zero)
-    private let tint = NSView()
     private let more = label(11, .medium, .tertiaryLabelColor)
     private let details = NSTextField(wrappingLabelWithString: "")
     private var expandedFor: String?                 // the waiting prompt whose details are open
@@ -44,18 +43,14 @@ final class Attention {
         surface.onDismiss = { [weak self] in self?.dismiss() }
         surface.onAppearance = { [weak self] in self?.update() }
         // One surface, warmed by the colour of what it's for, rather than a card inside a card.
-        if !panel.tint(Status.needsYou.colour.withAlphaComponent(0.16)) {
-            tint.wantsLayer = true
-            tint.layer?.backgroundColor = Status.needsYou.colour.withAlphaComponent(0.1).cgColor
-            tint.frame = surface.bounds
-            tint.autoresizingMask = [.width, .height]
-        }
+        // Only Liquid Glass takes a tint well; over the older material orange turns brown.
+        panel.tint(Status.needsYou.colour.withAlphaComponent(0.16))
         details.identifier = NSUserInterfaceItemIdentifier("muster.details")
         details.isSelectable = false
         details.maximumNumberOfLines = 18
         details.cell?.truncatesLastVisibleLine = true
         details.isHidden = true
-        [tint, row, details, more].forEach(surface.addSubview)
+        [row, details, more].forEach(surface.addSubview)
         panel.content.addSubview(surface)
         Store.shared.observe { [weak self] _ in self?.update() }
         NotificationCenter.default.addObserver(forName: Self.changed, object: nil, queue: .main) { [weak self] _ in self?.update() }
@@ -91,7 +86,7 @@ final class Attention {
         if expandedFor != nil, expandedFor != key(first) { expandedFor = nil }   // a new prompt starts folded
         let open = prompt != nil && expandedFor == key(first)
         row.show(first, now: Date(), unfolded: open, trailing: false)
-        var hints = Self.hints(prompt, open: open, more: pending.count - 1, offerAnswering: prompt == nil && !answering(first.agent))
+        var hints = Self.hints(prompt, open: open, more: pending.count - 1, offerAnswering: prompt == nil && first.asking == nil && !answering(first.agent))
         if prompt == nil, first.agent != .cursor, answering(first.agent) {
             hints.append(KeyHint([], "Approval missing here? Check the connection in Settings"))
         }
