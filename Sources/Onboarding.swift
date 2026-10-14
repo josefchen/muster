@@ -65,6 +65,7 @@ final class Welcome {
     private func closed() {
         HookSetup.shared.stopChecking()
         if model.reachedEnd, !Store.demo, model.openAtLogin != Settings.launchAtLogin { Settings.launchAtLogin = model.openAtLogin }
+        if model.reachedEnd, !Store.demo, !E2E.on, model.checkUpdates != Updates.automatic { Updates.automatic = model.checkUpdates }
         UserDefaults.standard.set(true, forKey: "launched")
         switcher.practice = false
         if let flags { NSEvent.removeMonitor(flags) }
@@ -127,6 +128,7 @@ final class OnboardingModel: ObservableObject {
     @Published var held: NSEvent.ModifierFlags = []
     @Published var hookError: String?
     @Published var openAtLogin = true
+    @Published var checkUpdates = true
     var finish: (() -> Void)?
 
     init(startAt: Step = .hello) { step = startAt }
@@ -159,6 +161,7 @@ final class OnboardingModel: ObservableObject {
         triedSwitcher = false
         triedSearch = false
         openAtLogin = UserDefaults.standard.bool(forKey: "launched") ? Settings.launchAtLogin : true
+        checkUpdates = UserDefaults.standard.bool(forKey: "launched") ? Updates.automatic : true
     }
 
     /// `--demo --step 3` opens the tour on that page (0 is hello), for screenshots.
@@ -783,6 +786,19 @@ private struct NotifyPage: View {
                     Spacer()
                     Toggle("", isOn: $model.openAtLogin).toggleStyle(.switch).labelsHidden()
                         .accessibilityLabel("Open at login")
+                }
+                .padding(14)
+                Divider().padding(.leading, 62)
+                HStack(spacing: 14) {
+                    icon("arrow.down.circle.fill", .green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Updates").font(.system(size: 14, weight: .semibold))
+                        Text("Tells you when a new version is out. Asks GitHub once a day, nothing else.")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $model.checkUpdates).toggleStyle(.switch).labelsHidden()
+                        .accessibilityLabel("Tell me about updates")
                 }
                 .padding(14)
             }

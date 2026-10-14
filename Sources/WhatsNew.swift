@@ -159,12 +159,23 @@ private struct WhatsNewView: View {
         }
     }
 
+    /// Without the daily check nothing tells you about the next release, so the window you
+    /// see after updating offers it, ticked; Continue turns it on.
+    private let offerUpdates = !Updates.automatic && !E2E.on
+    @State private var updates = true
+
     private var footer: some View {
-        HStack {
+        HStack(spacing: 16) {
             Button("All Changes") { NSWorkspace.shared.open(WhatsNew.allChanges) }
                 .buttonStyle(.link)
             Spacer()
-            Button(action: close) { Text("Continue").frame(minWidth: 110) }
+            if offerUpdates {
+                Toggle("Tell me about new versions", isOn: $updates)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+                    .help("Asks GitHub once a day whether there's a newer Muster. Nothing else is sent.")
+            }
+            Button(action: { if offerUpdates && updates { Updates.automatic = true }; close() }) { Text("Continue").frame(minWidth: 110) }
                 .controlSize(.large)
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)

@@ -20,7 +20,7 @@
 
 ## How it works
 
-Muster reads the session files the agents already write on your Mac (Claude Code's transcripts, Codex's rollout files and thread database, Cursor's local database). Answering prompts uses each agent's own hooks, which call Muster on 127.0.0.1 with a per-install token. Nothing is sent anywhere; the only network request is an optional update check.
+Muster reads the session files the agents already write on your Mac (Claude Code's transcripts, Codex's rollout files and thread database, Cursor's local database). Answering prompts uses each agent's own hooks, which call Muster on 127.0.0.1 with a per-install token. Nothing is sent anywhere; the only network request is a once-a-day update check that the welcome tour asks about and Settings can turn off.
 
 ## Pages
 
