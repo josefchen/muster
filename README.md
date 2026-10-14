@@ -95,7 +95,7 @@ Most urgent first. Let go to land in its window, or the terminal it runs in.
   </picture>
 </p>
 
-<p align="center"><sub>Native AppKit and Liquid Glass · 2 MB download · about 0.4% CPU and 20 MB of memory with ten agents busy · no accounts, no analytics · MIT</sub></p>
+<p align="center"><sub>Native AppKit and Liquid Glass · macOS 14+ · Apple silicon and Intel · no accounts or app analytics · MIT</sub></p>
 
 <br>
 
@@ -176,7 +176,9 @@ Use your own prices from **Settings → Use my own prices…**, which writes `~/
 <summary><b>Privacy</b></summary>
 <br>
 
-No accounts, no analytics. The only network request is the update check, which asks GitHub for the latest release when you click Check for Updates, or once a day if you leave "Updates" on in the welcome tour (or tick it in What's New, or turn it on in Settings). The prompt server listens on `127.0.0.1` only and needs a token that lives in your user defaults and the agents' hook settings.
+No accounts or app analytics. The only network request is the update check, which asks GitHub for the latest release when you click Check for Updates, or once a day if you leave "Updates" on in the welcome tour (or tick it in What's New, or turn it on in Settings). The prompt server listens on `127.0.0.1` only and needs a token that lives in your user defaults and the agents' hook settings.
+
+The website keeps aggregate daily page-load and download-click counts, with no cookies or visitor identifiers. It honors Do Not Track and Global Privacy Control. See the [privacy page](https://agentmuster.app/privacy) and [measurement guide](docs/measurement.md).
 
 </details>
 

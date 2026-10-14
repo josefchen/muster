@@ -100,9 +100,15 @@ private struct WhatsNewView: View {
     var scrolls = false
     let close: () -> Void
 
+    // Asking NSApp for its icon can block on IconServices in an unregistered bundle.
+    private static let icon = Bundle.main.url(forResource: "AppIcon", withExtension: "icns")
+        .flatMap { NSImage(contentsOf: $0) }
+        ?? NSImage(systemSymbolName: "rectangle.stack.fill", accessibilityDescription: nil)
+        ?? NSImage(size: NSSize(width: 76, height: 76))
+
     var body: some View {
         VStack(spacing: 0) {
-            Image(nsImage: NSApp.applicationIconImage)
+            Image(nsImage: Self.icon)
                 .resizable()
                 .frame(width: 76, height: 76)
                 .accessibilityHidden(true)

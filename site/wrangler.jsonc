@@ -1,12 +1,19 @@
-// The landing page at agentmuster.app: static files only, built into ./dist by
-// scripts/site.sh. www.agentmuster.app is a separate redirect Worker in ./www.
+// The site and its aggregate counters. The app itself sends no analytics.
 {
   "name": "agentmuster",
-  "compatibility_date": "2026-10-09",
+  "main": "worker.ts",
+  "compatibility_date": "2026-10-14",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "404-page"
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/", "/privacy", "/site.js", "/api/*", "/changelog*", "/guides/*"]
   },
+  "rules": [{ "type": "Text", "globs": ["**/*.html", "**/client.js"], "fallthrough": true }],
+  "d1_databases": [{ "binding": "METRICS", "database_name": "muster-gtm", "database_id": "4d17e6d9-ce8a-42e2-869c-934dddcb4021" }],
+  "triggers": { "crons": ["17 * * * *"] },
+  "observability": { "enabled": false },
+  "logpush": false,
   "workers_dev": false,
   "preview_urls": false,
   "routes": [{ "pattern": "agentmuster.app", "custom_domain": true }]
