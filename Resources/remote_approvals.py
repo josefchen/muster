@@ -139,6 +139,17 @@ def main():
             for worker in list(workers):
                 if time.monotonic() >= worker["deadline"]:
                     close(worker)
+                elif worker.get("eof"):
+                    status = worker["process"].poll()
+                    if status is None:
+                        continue
+                    try:
+                        result = json.loads(worker["data"]) if status == 0 else None
+                        if decision(result, event):
+                            return result
+                    except (ValueError, TypeError):
+                        pass
+                    close(worker)
             for key, _ in selector.select(.1) if workers else []:
                 worker, writing = key.data
                 if worker not in workers:
@@ -157,6 +168,12 @@ def main():
                         close(worker)
                         continue
                     if chunk and not (worker.get("muster") and b"\n" in worker["data"]):
+                        continue
+                    if not worker.get("muster"):
+                        selector.unregister(key.fileobj)
+                        worker["read"].close()
+                        worker["read"] = None
+                        worker["eof"] = True
                         continue
                     result = json.loads(worker["data"])
                     if worker.get("muster") and result == {"_muster": "native"}:

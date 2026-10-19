@@ -186,6 +186,18 @@ class CooperationTest(unittest.TestCase):
         self.bridge.answer(request["requestID"], answer("deny"))
         self.assertEqual(self.finish(process), answer("deny"))
 
+    def test_failed_receiver_cannot_win_with_valid_looking_output(self):
+        self.install()
+        self.peer.write_text(self.peer.read_text() + "\nraise SystemExit(7)\n")
+        self.bridge.start()
+        process = self.start()
+        request = self.frame("prompt")
+        self.reply(self.requests.get(timeout=3), answer())
+        with self.assertRaises(subprocess.TimeoutExpired):
+            process.wait(timeout=.3)
+        self.bridge.answer(request["requestID"], answer("deny"))
+        self.assertEqual(self.finish(process), answer("deny"))
+
     def test_disconnected_mac_leaves_relay_available(self):
         self.install()
         self.bridge.start()
@@ -195,6 +207,19 @@ class CooperationTest(unittest.TestCase):
         self.bridge.close()
         self.reply(slot, answer())
         self.assertEqual(self.finish(process), answer())
+
+    def test_receiver_with_closed_stdout_must_exit_before_its_answer_can_win(self):
+        self.install()
+        self.peer.write_text(self.peer.read_text() +
+                             "\nimport os,time\nsys.stdout.flush()\nos.close(1)\ntime.sleep(60)\n")
+        self.bridge.start()
+        process = self.start()
+        request = self.frame("prompt")
+        self.reply(self.requests.get(timeout=3), answer())
+        with self.assertRaises(subprocess.TimeoutExpired):
+            process.wait(timeout=.3)
+        self.bridge.answer(request["requestID"], answer("deny"))
+        self.assertEqual(self.finish(process), answer("deny"))
 
     def test_explicit_jump_to_native_releases_both_receivers(self):
         self.install()
