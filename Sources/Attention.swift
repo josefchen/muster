@@ -74,7 +74,7 @@ final class Attention {
         Prompts.shared.answer(p, a)
     }
 
-    private func key(_ s: Session) -> String { "\(s.id)|\(s.since.timeIntervalSince1970)|\(s.promptID?.uuidString ?? "")" }
+    private func key(_ s: Session) -> String { "\(s.id)|\(s.since.timeIntervalSince1970)|\(s.promptID?.uuidString ?? "")|\(s.asking ?? "")" }
 
     private func update() {
         let waiting = Store.shared.sessions.filter { $0.status == .needsYou }
@@ -87,7 +87,7 @@ final class Attention {
         let open = prompt != nil && expandedFor == key(first)
         row.show(first, now: Date(), unfolded: open, trailing: false)
         var hints = Self.hints(prompt, open: open, more: pending.count - 1, offerAnswering: first.remoteHost == nil && prompt == nil && first.asking == nil && !answering(first.agent))
-        if first.remoteHost == nil, prompt == nil, first.agent != .cursor, answering(first.agent) {
+        if first.remoteHost == nil, prompt == nil, first.asking == nil, first.agent != .cursor, answering(first.agent) {
             hints.append(KeyHint([], "Approval missing here? Check the connection in Settings"))
         }
         if let host = first.remoteHost { hints.append(KeyHint([], first.remoteOffline ? "\(host) offline · Last known request" : "Answer on \(host)")) }

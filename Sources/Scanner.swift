@@ -1391,7 +1391,7 @@ final class CodexReader {
         var totals: [String: Any]?   // the newest running total_token_usage
         /// Async questions can outlive the turn that asked them. Keep each unanswered call
         /// so answering a newer question cannot hide an older one.
-        var questions: [String: (text: String, at: Date)] = [:]
+        var questions: [String: (texts: [Int: String], at: Date)] = [:]
 
         var result: (Status, Date, [String: Usage], String?)? {
             guard let status else { return nil }
@@ -1404,7 +1404,10 @@ final class CodexReader {
                 usage[model ?? "unknown"] = Usage(input: max(0, n("input_tokens") - cached - write), cacheWrite5m: write, cacheWrite1h: 0,
                                                   cacheRead: cached, output: n("output_tokens"))
             }
-            if let question = questions.values.max(by: { $0.at < $1.at }) { return (.needsYou, max(question.at, status.1), usage, question.text) }
+            if let batch = questions.values.max(by: { $0.at < $1.at }), let index = batch.texts.keys.min(), let first = batch.texts[index] {
+                let text = batch.texts.count > 1 ? "\(first) (and \(batch.texts.count - 1) more)" : first
+                return (.needsYou, max(batch.at, status.1), usage, text)
+            }
             return (status.0, status.1, usage, nil)
         }
     }
@@ -1434,21 +1437,25 @@ final class CodexReader {
         defer { close(fd) }
         var next = r
         var haveStatus = false, haveTotals = false, haveModel = false
-        var replied: Set<String> = []   // call ids answered later in the file
+        var replied: [String: Set<Int>] = [:]
+        var completed: Set<String> = []
         next.offset = LineReader.reverse(fd, from: r.offset, to: f.size) { line in
             guard Bytes.has(line, eventKeys), let d = decode(line) else { return true }
             let p = d["payload"] as? [String: Any]
             if p?["type"] as? String == "message", let text = Self.text(p), text.contains("send_user_message_question_reply") {
-                replied.formUnion(Self.callIDs(text))
+                for reply in Self.questionReplies(text) {
+                    if let index = reply.index { replied[reply.call, default: []].insert(index) }
+                    else { completed.insert(reply.call) }
+                }
             } else if p?["type"] as? String == "function_call_output", let id = p?["call_id"] as? String {
                 let output = (p?["output"] as? String).flatMap { $0.data(using: .utf8) }
                     .flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
-                if output?["accepted"] as? Bool != true { replied.insert(id) }
+                if output?["accepted"] as? Bool != true { completed.insert(id) }
             } else if p?["type"] as? String == "function_call",
                       let name = (p?["name"] as? String)?.split(separator: ".").last,
                       name == "request_user_input_async" || name == "request_user_input",
-                      let id = p?["call_id"] as? String, !replied.contains(id) {
-                next.questions[id] = (Self.question(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
+                      let id = p?["call_id"] as? String, !completed.contains(id) {
+                next.questions[id] = (Self.questionTexts(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
             }
             if !haveModel, d["type"] as? String == "turn_context", let m = p?["model"] as? String {
                 next.model = m
@@ -1471,12 +1478,17 @@ final class CodexReader {
             return true
         }
         // A reply appended later answers a question read on an earlier scan.
-        for id in replied { next.questions[id] = nil }
+        for id in completed { next.questions[id] = nil }
+        for (id, indices) in replied {
+            guard var batch = next.questions[id] else { continue }
+            for index in indices { batch.texts[index] = nil }
+            next.questions[id] = batch.texts.isEmpty ? nil : batch
+        }
         r = next
     }
 
     private static func text(_ p: [String: Any]?) -> String? {
-        (p?["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        (p?["content"] as? String) ?? (p?["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n")
     }
 
     private static func callIDs(_ text: String) -> Set<String> {
@@ -1484,12 +1496,27 @@ final class CodexReader {
         return Set(words.filter { $0.hasPrefix("call_") }.map(String.init))
     }
 
-    /// The first question's text, and how many more there are.
-    private static func question(_ arguments: String?) -> String {
+    private static func questionReplies(_ text: String) -> [(call: String, index: Int?)] {
+        let body = text.components(separatedBy: "<send_user_message_question_reply>").last?
+            .components(separatedBy: "</send_user_message_question_reply>").first ?? text
+        guard let records = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [[String: Any]] else {
+            return callIDs(text).map { ($0, nil) } // older replies identified only the call
+        }
+        return records.compactMap { record in
+            let raw = record["questionItemId"] as? String ?? ""
+            guard let parts = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [Any],
+                  let call = parts.compactMap({ $0 as? String }).first(where: { $0.hasPrefix("call_") }) else { return nil }
+            return (call, parts.count > 2 ? parts.last as? Int : nil)
+        }
+    }
+
+    private static func questionTexts(_ arguments: String?) -> [Int: String] {
         let d = arguments.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-        let qs = (d?["questions"] as? [[String: Any]] ?? []).compactMap { ($0["title"] ?? $0["question"]) as? String }
-        guard let first = qs.first else { return "Codex has a question" }
-        return qs.count > 1 ? "\(first) (and \(qs.count - 1) more)" : first
+        let qs = d?["questions"] as? [[String: Any]] ?? []
+        guard !qs.isEmpty else { return [0: "Codex has a question"] }
+        return Dictionary(uniqueKeysWithValues: qs.enumerated().map { index, q in
+            (index, (q["title"] ?? q["question"]) as? String ?? "Codex has a question")
+        })
     }
 
     /// A rollout's state. Its path is whatever Codex stored, which needn't match how

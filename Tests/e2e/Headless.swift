@@ -889,6 +889,27 @@ final class Headless {
 
     private func files() {
         section("Files")
+        let batch = CodexFixture(fx, project: "question-batch")
+        let call = "call_e2e_batch"
+        batch.write(batch.turnContext(), batch.started(), jsonLine(["timestamp": iso(Date()), "type": "response_item", "payload": [
+            "type": "function_call", "name": "request_user_input_async", "call_id": call,
+            "arguments": String(decoding: json(["questions": [["title": "First batch question"], ["title": "Second batch question"]]]), as: UTF8.self)]]), batch.completed())
+        batch.register(title: "Question batch")
+        expect(app, "a Codex batch shows its first question") { $0.session(batch.key)?["asking"] as? String == "First batch question (and 1 more)" }
+        expect(app, "the batch raises its alert") { $0.alertSession == batch.key }
+        check(app.state()?.alertHints?.contains("Check the connection") == false, "a Codex question does not suggest that approval setup is broken")
+        app.act("alert", ["part": "dismiss"])
+        func reply(_ index: Int) {
+            let id = String(decoding: json(["request_user_input_async", call, index] as [Any]), as: UTF8.self)
+            let body = String(decoding: json([["questionItemId": id, "answer": "Yes"]]), as: UTF8.self)
+            batch.append(jsonLine(["timestamp": iso(Date()), "type": "response_item", "payload": ["type": "message", "role": "user", "content": [
+                ["text": "<send_user_message_question_reply>" + body + "</send_user_message_question_reply>"]]]]))
+        }
+        reply(0)
+        expect(app, "answering one item leaves the second question waiting") { $0.status(batch.key) == "needsYou" && $0.session(batch.key)?["asking"] as? String == "Second batch question" }
+        expect(app, "the remaining question raises a fresh alert after the first was dismissed") { $0.alertSession == batch.key }
+        reply(1)
+        expect(app, "answering the complete batch clears it") { $0.status(batch.key) == "done" && $0.session(batch.key)?["asking"] is NSNull }
         let long = CodexFixture(fx, project: "long-turn")
         let old = Date().addingTimeInterval(-1800)
         long.write(long.turnContext(at: old), long.started(at: old), long.tokens(100, at: Date()))

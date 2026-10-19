@@ -171,8 +171,13 @@ class Reader:
         elif kind == "message" and p.get("role") == "user":
             message = text(p)
             if "send_user_message_question_reply" in message:
-                for call in re.findall(r"\bcall_[A-Za-z0-9_]+", message):
-                    questions.pop(call, None)
+                for call, index in Reader.question_replies(message):
+                    if index is None:
+                        questions.pop(call, None)
+                    elif call in questions:
+                        questions[call][0].pop(index, None)
+                        if not questions[call][0]:
+                            questions.pop(call)
         elif kind == "function_call_output":
             try:
                 output = json.loads(p.get("output", "{}"))
@@ -183,8 +188,25 @@ class Reader:
             questions.pop(p.get("call_id"), None)
         elif kind == "function_call" and p.get("name", "").split(".")[-1] in ("request_user_input_async", "request_user_input"):
             args = json.loads(p.get("arguments", "{}"))
-            q = args.get("questions", [])[0]
-            questions[p["call_id"]] = (str(q.get("title") or q.get("question") or "Codex has a question")[:240], at)
+            items = args.get("questions", [])
+            pending = {i: str(q.get("title") or q.get("question") or "Codex has a question")[:220] for i, q in enumerate(items)}
+            if pending:
+                questions[p["call_id"]] = (pending, at)
+
+    @staticmethod
+    def question_replies(message):
+        body = message.split("<send_user_message_question_reply>")[-1].split("</send_user_message_question_reply>")[0]
+        try:
+            records = json.loads(body)
+            result = []
+            for record in records:
+                parts = json.loads(record["questionItemId"])
+                call = next(p for p in parts if isinstance(p, str) and p.startswith("call_"))
+                index = parts[-1] if len(parts) > 2 and type(parts[-1]) is int else None
+                result.append((call, index))
+            return result
+        except (ValueError, TypeError, KeyError, StopIteration):
+            return [(call, None) for call in re.findall(r"\bcall_[A-Za-z0-9_]+", message)]
 
     @staticmethod
     def codex_result(state):
@@ -192,7 +214,10 @@ class Reader:
         since, activity = state["since"], state["lastActivity"]
         asking = None
         if state["questions"]:
-            asking, at = max(state["questions"].values(), key=lambda q: q[1])
+            pending, at = max(state["questions"].values(), key=lambda q: q[1])
+            asking = pending[min(pending)]
+            if len(pending) > 1:
+                asking += " (and " + str(len(pending)-1) + " more)"
             status, since = "needsYou", max(since, at)
         if status is None:
             if not activity:

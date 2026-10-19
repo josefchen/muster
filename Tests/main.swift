@@ -158,6 +158,19 @@ _ = askReader.scan(now: now)
 append(root + askRollout, json(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [
     ["type": "input_text", "text": "<send_user_message_question_reply> call_newer"]]]]) + "\n")
 check(askReader.scan(now: now).first?.asking == "Still waiting", "answering a newer question does not hide an older pending question")
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "function_call_output", "call_id": "call_older", "output": "{}"]]) + "\n")
+append(root + askRollout, json(["type": "response_item", "timestamp": iso(now), "payload": ["type": "function_call", "name": "request_user_input_async", "call_id": "call_batch",
+    "arguments": json(["questions": [["title": "First question"], ["title": "Second question"]]])]]) + "\n")
+check(askReader.scan(now: now).first?.asking == "First question (and 1 more)", "a batch reports the first unanswered question and how many remain")
+func batchReply(_ index: Int) -> String {
+    let body = json([["questionItemId": json(["request_user_input_async", "call_batch", index] as [Any]), "answer": "Yes"]])
+    return json(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [["text": "<send_user_message_question_reply>" + body + "</send_user_message_question_reply>"]]]]) + "\n"
+}
+append(root + askRollout, batchReply(0))
+check(askReader.scan(now: now).first?.asking == "Second question", "answering one item in a batch keeps the other question visible")
+check(CodexReader(home: root + "/ask").scan(now: now).first?.asking == "Second question", "a partially answered batch also survives restarting the reader")
+append(root + askRollout, batchReply(1))
+check(askReader.scan(now: now).first?.asking == nil, "answering the last item clears the batch")
 
 write("/long-turn/.codex/sessions/rollout.jsonl", [
     json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-1800)), "payload": ["type": "task_started"]]),

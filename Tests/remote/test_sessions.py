@@ -70,6 +70,19 @@ class RemoteSessionsTest(unittest.TestCase):
                     self.event("message", role="user", content=[{"text": '<send_user_message_question_reply>call_question</send_user_message_question_reply>'}])])
         self.assertEqual(self.reader.scan(self.now)["sessions"][0]["status"], "done")
 
+    def test_partial_batch_reply_keeps_remaining_questions(self):
+        q = self.question()
+        q["payload"]["arguments"] = json.dumps({"questions": [{"title": "First question"}, {"title": "Second question"}]})
+        path, _ = self.codex([self.event("task_started"), q, self.event("task_complete")])
+        self.reader.scan(self.now)
+        reply = '<send_user_message_question_reply>' + json.dumps([{"questionItemId": json.dumps(["request_user_input_async", "call_question", 0]), "answer": "Yes"}]) + '</send_user_message_question_reply>'
+        with path.open("a") as stream:
+            stream.write(json.dumps(self.event("message", role="user", content=reply)) + "\n")
+        for reader in [self.reader, remote.Reader(self.home)]:
+            session = reader.scan(self.now)["sessions"][0]
+            self.assertEqual(session["status"], "needsYou")
+            self.assertEqual(session["asking"], "Second question")
+
     def test_older_unanswered_question_survives_a_new_turn(self):
         self.codex([self.question("call_first", "Still waiting"), self.event("task_complete"),
                     self.event("task_started"), self.question("call_second"),
