@@ -142,6 +142,25 @@ append(root + askRollout, json(["type": "response_item", "payload": ["type": "me
 let answeredAsk = askReader.scan(now: now).first
 check(answeredAsk?.status == .done && answeredAsk?.asking == nil, "…and once you reply in Codex, it no longer asks")
 
+write("/long-turn/.codex/sessions/rollout.jsonl", [
+    json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-1800)), "payload": ["type": "task_started"]]),
+    json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-5)), "payload": [
+        "type": "token_count", "info": ["total_token_usage": ["input_tokens": 100, "output_tokens": 20]]]]),
+].joined(separator: "\n") + "\n")
+sqlite("/long-turn/.codex/state_5.sqlite", [
+    "CREATE TABLE threads (id TEXT, rollout_path TEXT, name TEXT, title TEXT, first_user_message TEXT, cwd TEXT, archived INT, updated_at_ms INT)",
+    "INSERT INTO threads VALUES ('long', '\(root)/long-turn/.codex/sessions/rollout.jsonl', '', 'Long task', '', '/work/long', 0, \(Int64(now.timeIntervalSince1970 * 1000)))",
+])
+let longTurnReader = CodexReader(home: root + "/long-turn")
+let longTurn = longTurnReader.scan(now: now).first
+check(longTurn?.status == .working && now.timeIntervalSince(longTurn?.lastActivity ?? .distantPast) < 10,
+      "a long Codex turn records fresh activity while token events are still arriving")
+check(now.timeIntervalSince(longTurn?.since ?? now) > 1200,
+      "token activity does not change the status timestamp used to resolve approvals")
+append(root + "/long-turn/.codex/sessions/rollout.jsonl",
+       json(["type": "event_msg", "timestamp": iso(now), "payload": ["type": "task_complete"]]) + "\n")
+check(longTurnReader.scan(now: now).first?.status == .done, "the long Codex turn still becomes done when it completes")
+
 print("Cursor")
 let header = json(["name": "Polish onboarding", "hasBlockingPendingActions": true,
                    "lastUpdatedAt": now.timeIntervalSince1970 * 1000, "workspaceIdentifier": ["uri": ["fsPath": "/work/web"]]])
@@ -362,6 +381,55 @@ let lockedCursor = cursorReader.scan(now: now, changes: Changes())
 chmod(root + "/.cursor/projects", 0o755)
 check(!lockedCursor.contains { $0.sid == "c2" }, "an unreadable Cursor projects folder drops its file-only chats, though FSEvents says nothing")
 check(cursorReader.scan(now: now, changes: Changes()).contains { $0.sid == "c2" }, "…which come back")
+
+print("Database recovery")
+sqlite("/database/errors.sqlite", ["CREATE TABLE numbers (n INTEGER)"])
+let partialRows = SQLiteRO.rows(root + "/database/errors.sqlite",
+    "SELECT abs(n) FROM (SELECT 1 AS n UNION ALL SELECT -9223372036854775808)")
+check(partialRows == nil, "a query that fails after its first row never returns a partial session list")
+
+let lockedHome = root + "/database/cursor"
+let lockedDBPath = lockedHome + "/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
+sqlite(String(lockedDBPath.dropFirst(root.count)), [
+    "CREATE TABLE composerHeaders (composerId TEXT, value TEXT, isSubagent INT, isArchived INT, lastUpdatedAt INT, checkpointAt INT)",
+    "INSERT INTO composerHeaders VALUES ('retry', '\(header.replacingOccurrences(of: "'", with: "''"))', 0, 0, \(Int64(now.timeIntervalSince1970 * 1000)), NULL)",
+])
+var writer: OpaquePointer?
+check(sqlite3_open(lockedDBPath, &writer) == SQLITE_OK
+      && sqlite3_exec(writer, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK, "the recovery fixture holds an exclusive database lock")
+let recoveringCursor = CursorReader(home: lockedHome)
+_ = recoveringCursor.scan(now: now)
+check({ if case .unreadable = recoveringCursor.state { return true }; return false }(), "a locked Cursor database reports that it could not be read")
+sqlite3_exec(writer, "ROLLBACK", nil, nil, nil)
+sqlite3_close(writer)
+check(recoveringCursor.scan(now: now, changes: Changes()).contains { $0.sid == "retry" },
+      "Cursor retries a failed read after the lock clears, even without a file event or a database write")
+sqlite3_open(lockedDBPath, &writer)
+sqlite3_exec(writer, "BEGIN EXCLUSIVE", nil, nil, nil)
+try! fm.setAttributes([.modificationDate: now.addingTimeInterval(2)], ofItemAtPath: lockedDBPath)
+check(recoveringCursor.scan(now: now).contains { $0.sid == "retry" },
+      "a transient Cursor read failure keeps the last known chat list")
+check({ if case .unreadable = recoveringCursor.state { return true }; return false }(),
+      "cached Cursor chats do not hide the read failure")
+sqlite3_exec(writer, "ROLLBACK", nil, nil, nil)
+sqlite3_close(writer)
+_ = recoveringCursor.scan(now: now, changes: Changes())
+check(recoveringCursor.state == .ok(1), "Cursor clears its read warning on the next successful scan")
+
+let recoveringCodex = CodexReader(home: root)
+_ = recoveringCodex.scan(now: now)
+let codexDBPath = root + "/.codex/state_5.sqlite"
+sqlite3_open(codexDBPath, &writer)
+sqlite3_exec(writer, "BEGIN EXCLUSIVE", nil, nil, nil)
+try! fm.setAttributes([.modificationDate: now.addingTimeInterval(2)], ofItemAtPath: codexDBPath)
+check(recoveringCodex.scan(now: now).contains { $0.sid == "t1" },
+      "a transient Codex read failure keeps the last known thread list")
+check({ if case .unreadable = recoveringCodex.state { return true }; return false }(),
+      "cached Codex threads do not hide the read failure")
+sqlite3_exec(writer, "ROLLBACK", nil, nil, nil)
+sqlite3_close(writer)
+_ = recoveringCodex.scan(now: now, changes: Changes())
+check(recoveringCodex.state == .ok(1), "Codex retries after the lock clears without waiting for a database write")
 
 print("Pricing")
 check(Pricing.price(for: "claude-haiku-4-5-20251001") != nil, "dated model ids resolve by prefix")

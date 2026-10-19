@@ -93,7 +93,9 @@ final class Store {
                 if enabled.contains(.cursor) { all += self.cursor.scan(now: now, changes: since(.cursor)) }
                 return all.compactMap { s in
                     var s = s
-                    if s.status == .working, now.timeIntervalSince(s.since) > Self.staleWorking { s.status = .idle }
+                    if s.status == .working, now.timeIntervalSince(max(s.since, s.lastActivity ?? s.since)) > Self.staleWorking {
+                        s.status = .idle
+                    }
                     if s.status.section == .recent, now.timeIntervalSince(s.since) > recentWindow { return nil }
                     return s
                 }

@@ -2,6 +2,14 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
+## 1.3.3 · Unreleased
+
+Sessions recover from temporary read failures, and long Codex tasks stay working.
+
+- <!-- arrow.clockwise --> **Sessions come back.** A temporary lock on Codex's or Cursor's database keeps the last known session list and retries, instead of dropping sessions or staying empty after the lock clears.
+- <!-- waveform --> **Long Codex tasks stay working.** New token activity keeps a long task active without clearing an approval that still needs your answer.
+- <!-- desktopcomputer --> **Intel Macs work too.** Includes the startup fix for Intel Macs; local build and test scripts now use your Mac's architecture.
+
 ## 1.3.2 · 2026-10-14
 
 Each request reaches you once, Codex's questions show up, and answering setup checks itself.

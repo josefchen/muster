@@ -330,6 +330,10 @@ final class Headless {
         app.act("front", ["agent": "codex"])
         let run = codexHook(x.permissionPayload(command: "printf check"))
         let xp = held("codex", x.id, "permission", "the installed Codex curl command reaches setup")
+        x.append(x.tokens(100, at: Date().addingTimeInterval(2)))
+        settle()
+        check(app.state()?.prompt(agent: "codex", sid: x.id) != nil,
+              "a token heartbeat cannot resolve a pending Codex approval")
         check(app.state()?.hookSetup("codex") == "received", "Codex is not ready merely because its command ran")
         app.act("front", ["agent": "codex"])
         check(app.state()?.prompt(agent: "codex", sid: x.id) != nil,
@@ -816,6 +820,21 @@ final class Headless {
 
     private func files() {
         section("Files")
+        let long = CodexFixture(fx, project: "long-turn")
+        let old = Date().addingTimeInterval(-1800)
+        long.write(long.turnContext(at: old), long.started(at: old), long.tokens(100, at: Date()))
+        long.register(title: "Long-running task")
+        expect(app, "a Codex turn older than twenty minutes stays working while tokens arrive") { $0.status(long.key) == "working" }
+        let quiet = CodexFixture(fx, project: "quiet-turn")
+        quiet.write(quiet.turnContext(at: old), quiet.started(at: old), quiet.tokens(100, at: old))
+        quiet.register(title: "Quiet task")
+        expect(app, "a Codex turn becomes idle once its activity is stale") { $0.status(quiet.key) == "idle" }
+        quiet.append(quiet.tokens(200))
+        expect(app, "fresh Codex activity brings an idle task back to working") { $0.status(quiet.key) == "working" }
+        quiet.append(quiet.completed())
+        long.append(long.completed())
+        expect(app, "long Codex tasks still move to done when they finish") { $0.status(long.key) == "done" && $0.status(quiet.key) == "done" }
+
         let f = ClaudeFixture(fx, project: "files")
         f.write(f.user("Read the logs"), f.reply("Read them."))
         expect(app, "a fresh transcript reads as done") { $0.status(f.id) == "done" }

@@ -925,7 +925,8 @@ enum SQLiteRO {
             }
             for (i, v) in binds.enumerated() { sqlite3_bind_int64(stmt, Int32(i + 1), v) }
             var out: [[Any?]] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
+            var result = sqlite3_step(stmt)
+            while result == SQLITE_ROW {
                 var row: [Any?] = []
                 for c in 0..<sqlite3_column_count(stmt) {
                     switch sqlite3_column_type(stmt, c) {
@@ -939,8 +940,9 @@ enum SQLiteRO {
                     }
                 }
                 out.append(row)
+                result = sqlite3_step(stmt)
             }
-            return out
+            return result == SQLITE_DONE ? out : nil
         }
     }
 
@@ -1384,6 +1386,7 @@ final class CodexReader {
         var info: FileInfo?
         var offset: UInt64 = 0
         var status: (Status, Date)?
+        var activity = Date.distantPast
         var model: String?
         var totals: [String: Any]?   // the newest running total_token_usage
         /// A question Codex asked in its latest turn (request_user_input_async) that has no
@@ -1410,6 +1413,7 @@ final class CodexReader {
 
     private var rollouts: [String: Rollout] = [:]
     private var rows: [Row]?
+    private var rowsReadable = true
     private var dbStamp: [FileInfo?] = []
     private var connection: SQLiteRO.Connection?
     private let tree = DirTree()
@@ -1454,6 +1458,7 @@ final class CodexReader {
             }
             switch p?["type"] as? String {
             case "token_count":
+                if let at = parseISO(d["timestamp"]) { next.activity = max(next.activity, at) }
                 if !haveTotals, let info = p?["info"] as? [String: Any] {
                     next.totals = info["total_token_usage"] as? [String: Any] ?? [:]
                     haveTotals = true
@@ -1519,18 +1524,19 @@ final class CodexReader {
             return []
         }
         let cutoff = Int64((now.timeIntervalSince1970 - recentWindow) * 1000)
-        if rows == nil || changes.touches(root) {
+        if rows == nil || !rowsReadable || changes.touches(root) {
             let stamp = [db, stat(db.path + "-wal")]
-            if rows == nil || stamp != dbStamp {
-                dbStamp = stamp
+            if rows == nil || !rowsReadable || stamp != dbStamp {
                 // An open connection would keep reading a file that just became unreadable.
                 if access(db.path, R_OK) != 0 { connection = nil }
-                rows = access(db.path, R_OK) != 0 ? nil : SQLiteRO.connection(db.path, &connection, ino: db.ino)?.rows(
+                let refreshed: [Row]? = access(db.path, R_OK) != 0 ? nil : SQLiteRO.connection(db.path, &connection, ino: db.ino)?.rows(
                     "SELECT id, rollout_path, COALESCE(NULLIF(name,''), NULLIF(title,''), first_user_message, ''), cwd, updated_at_ms " +
                     "FROM threads WHERE archived = 0 AND updated_at_ms > ?", [cutoff])?.compactMap { r in
                         guard let id = r[0] as? String, let path = r[1] as? String else { return nil }
                         return Row(id: id, path: path, title: r[2] as? String ?? "", cwd: r[3] as? String ?? "", updated: r[4] as? Int64 ?? 0)
                     }
+                rowsReadable = refreshed != nil
+                if let refreshed { rows = refreshed; dbStamp = stamp }
             }
         }
         guard let rows else {
@@ -1544,6 +1550,7 @@ final class CodexReader {
             var s = Session(agent: .codex, sid: r.id, status: res.0, since: res.1,
                             title: String(r.title.prefix(80)), project: r.cwd, appID: "")
             s.asking = res.3
+            s.lastActivity = rollouts[r.path]?.activity
             s.account(res.2)
             return s
         }
@@ -1551,7 +1558,7 @@ final class CodexReader {
             let keep = Set(live.map(\.path))
             rollouts = rollouts.filter { keep.contains($0.key) }
         }
-        state = .ok(found.count)
+        state = rowsReadable ? .ok(found.count) : .unreadable("Can't read Codex's thread list. Will try again.")
         return found
     }
 
@@ -1649,9 +1656,9 @@ final class CursorReader {
 
     /// The Agents window's chat list, re-read only when the database or its WAL changes.
     private func headers(now: Date, changes: Changes) -> [String: [String: Any]] {
-        if let c = headerCache, !changes.touches(parent(db)) { return c.value }
+        if headersReadable, let c = headerCache, !changes.touches(parent(db)) { return c.value }
         let key = [stat(db), stat(db + "-wal")]
-        if let c = headerCache, c.key == key { return c.value }
+        if headersReadable, let c = headerCache, c.key == key { return c.value }
         var out: [String: [String: Any]] = [:]
         let cutoff = Int64((now.timeIntervalSince1970 - recentWindow) * 1000)
         // An open connection would keep reading a file that just became unreadable.
@@ -1660,6 +1667,9 @@ final class CursorReader {
             "SELECT composerId, value FROM composerHeaders WHERE isSubagent = 0 AND isArchived = 0 " +
             "AND MAX(lastUpdatedAt, COALESCE(checkpointAt, 0)) > ?", [cutoff])
         headersReadable = rows != nil || key[0] == nil
+        // A lock can clear without changing either file. Keep the last good list
+        // and retry next scan instead of caching the failure as an empty database.
+        guard headersReadable else { return headerCache?.value ?? [:] }
         for r in rows ?? [] {
             if let id = r[0] as? String, let h = jsonObject(r[1]) { out[id] = h }
         }
@@ -1713,10 +1723,10 @@ final class CursorReader {
                                title: (h["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title,
                                project: ws, appID: "", fault: status == .error || status == .blocked ? fault : nil))
         }
-        if top == nil && headerCache.map({ $0.key[0] == nil }) ?? true {
-            state = .notInstalled
-        } else if !headersReadable {
+        if !headersReadable {
             state = .unreadable("Can't read Cursor's chat list. Its format may have changed.")
+        } else if top == nil && headerCache.map({ $0.key[0] == nil }) ?? true {
+            state = .notInstalled
         } else {
             state = .ok(out.count)
         }

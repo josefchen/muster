@@ -221,6 +221,7 @@ struct Session: Equatable {
     var promptID: UUID?      // a prompt waiting in Muster for your answer
     var asking: String?      // a question the agent asked that only its own app can answer
     var fault: Fault?        // why it stopped, while status is .error or .blocked
+    var lastActivity: Date?  // a heartbeat, separate from the status change used to resolve prompts
 
     var id: String { "\(agent.rawValue):\(sid)" }
 
