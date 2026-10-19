@@ -2,6 +2,16 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
+## 1.4.0 · Unreleased
+
+Watch sessions on your SSH hosts alongside this Mac, with clearer connection states.
+
+- <!-- network --> **Watch your other machines.** Enable hosts in Settings → Remote sessions to monitor recent Codex, Claude Code and Cursor sessions through your existing SSH access. Questions show the host where you answer; disconnected hosts keep their last summaries and reconnect automatically. Python 3 is required on each host.
+- <!-- questionmark.bubble --> **Questions stay visible.** Recognizes both Codex question APIs and keeps unanswered questions through new turns and restarts. Answering one question in a batch keeps the remaining ones visible. Long remote tool output no longer pushes a waiting question out of view.
+- <!-- arrow.clockwise --> **Sessions come back.** A temporary lock on Codex's or Cursor's database keeps the last known session list and retries, instead of dropping sessions or staying empty after the lock clears.
+- <!-- waveform --> **Long Codex tasks stay working.** New token activity keeps a long task active without clearing an approval that still needs your answer.
+- <!-- desktopcomputer --> **Intel Macs work too.** Includes the startup fix for Intel Macs; local build and test scripts now use your Mac's architecture.
+
 ## 1.3.2 · 2026-10-14
 
 Each request reaches you once, Codex's questions show up, and answering setup checks itself.

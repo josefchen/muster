@@ -23,27 +23,30 @@ jobs:
       - name: Test
         run: ./test.sh
       - name: Build
-        run: swiftc -O -swift-version 5 -target arm64-apple-macos14 -o Muster Sources/*.swift
-      - name: End-to-end
-        run: scripts/e2e.sh
-      - name: Soak
-        run: scripts/e2e.sh --soak 2
-        env:
-          MUSTER_SOAK_CPU_LIMIT: "3"
-      # Only macOS 26's SDK compiles Muster (it uses Liquid Glass when it's there), so the
-      # other Macs below test this one universal build rather than building their own.
-      - name: Build for other Macs
         run: scripts/e2e.sh --export dist && tar -czf e2e.tgz dist
       - uses: actions/upload-artifact@v7
         with:
           name: e2e
           path: e2e.tgz
           retention-days: 3
+      - name: End-to-end
+        run: scripts/e2e.sh --prebuilt dist
+      - name: Soak
+        run: scripts/e2e.sh --prebuilt dist --soak 2
+        env:
+          MUSTER_SOAK_CPU_LIMIT: "3"
       - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: diagnostics-build
           path: e2e-diagnostics
+          retention-days: 3
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ssh-ui-build
+          path: e2e-diagnostics/ssh-ui
+          if-no-files-found: ignore
           retention-days: 3
 
   diagnose-intel:
@@ -98,7 +101,8 @@ jobs:
           npx --yes --package typescript@5.9.3 tsc -p site/tsconfig.json
           npx --yes wrangler@4.151.0 deploy --dry-run --config site/wrangler.jsonc
 
-  # The same suite on every macOS Muster supports, on Apple silicon and on Intel.
+  # Only macOS 26's SDK compiles Muster's Liquid Glass views. Test the same universal
+  # app on every supported macOS and architecture instead of rebuilding it per job.
   other-macs:
     needs: build
     strategy:

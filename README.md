@@ -150,7 +150,7 @@ Claude Code can notify you on its own in some terminals, and a few lines of sett
 <summary><b>How it works</b></summary>
 <br>
 
-Muster reads the session files each app already writes. Nothing to configure.
+Muster reads the session files each app already writes. Local sessions need no configuration.
 
 | App | Read from |
 |---|---|
@@ -159,6 +159,12 @@ Muster reads the session files each app already writes. Nothing to configure.
 | **Cursor** | The Agents window's chat list and agent transcripts |
 
 Everything is opened read-only. File system events trigger a rescan, at most once a second; transcripts are read incrementally, only the bytes added since the last look.
+
+**Remote sessions (1.4, in development).** Open **Settings → Remote sessions** and enable an SSH alias, or add `user@hostname`. Muster discovers explicit aliases from your SSH config without connecting; only enabled hosts are contacted. Each host needs Python 3 and noninteractive SSH access from this Mac. If SSH needs a password, a new host key confirmation or an unlocked key, connect in Terminal first.
+
+The remote reader runs in memory and polls every three seconds. It reads recent Codex, Claude Code and Cursor data, then sends titles, project paths, status and question previews over encrypted SSH. Summaries stay in memory on the Mac. If a connection drops, the last summaries are marked offline while Muster reconnects. Search by host name to find its sessions.
+
+Answer remote questions and permissions in the agent on that host. Codex links include the SSH host; other agents offer an SSH command to copy. Remote monitoring installs no permission hooks, so it can show only requests recorded in the agent's session data. It does not report remote token costs. The session list covers the last three hours, up to 500 sessions per host, and reports read failures or truncation in Settings.
 
 </details>
 
@@ -176,7 +182,9 @@ Use your own prices from **Settings → Use my own prices…**, which writes `~/
 <summary><b>Privacy</b></summary>
 <br>
 
-No accounts or app analytics. The only network request is the update check, which asks GitHub for the latest release when you click Check for Updates, or once a day if you leave "Updates" on in the welcome tour (or tick it in What's New, or turn it on in Settings). The prompt server listens on `127.0.0.1` only and needs a token that lives in your user defaults and the agents' hook settings.
+No accounts or app analytics. Optional SSH monitoring contacts only hosts you enable and transfers session summaries to this Mac; it does not copy full transcripts or raw tool payloads, forward your SSH agent, or install remote hooks. SSH keys and host trust remain managed by SSH. Host settings and read/unread timestamps keyed by session ID are saved on this Mac. Session titles, project paths and question previews stay in memory.
+
+The update check asks GitHub for the latest release when you click Check for Updates, or once a day if you leave "Updates" on in the welcome tour (or tick it in What's New, or turn it on in Settings). The local prompt server listens on `127.0.0.1` only and needs a token that lives in your user defaults and the agents' hook settings.
 
 The website keeps aggregate daily page-load and download-click counts, with no cookies or visitor identifiers. It honors Do Not Track and Global Privacy Control. See the [privacy page](https://agentmuster.app/privacy) and [measurement guide](docs/measurement.md).
 

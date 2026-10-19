@@ -925,7 +925,8 @@ enum SQLiteRO {
             }
             for (i, v) in binds.enumerated() { sqlite3_bind_int64(stmt, Int32(i + 1), v) }
             var out: [[Any?]] = []
-            while sqlite3_step(stmt) == SQLITE_ROW {
+            var result = sqlite3_step(stmt)
+            while result == SQLITE_ROW {
                 var row: [Any?] = []
                 for c in 0..<sqlite3_column_count(stmt) {
                     switch sqlite3_column_type(stmt, c) {
@@ -939,8 +940,9 @@ enum SQLiteRO {
                     }
                 }
                 out.append(row)
+                result = sqlite3_step(stmt)
             }
-            return out
+            return result == SQLITE_DONE ? out : nil
         }
     }
 
@@ -1377,18 +1379,19 @@ final class ClaudeReader {
 
 final class CodexReader {
     private static let eventKeys = ["token_count", "task_started", "task_complete", "turn_aborted", "turn_context",
-                                    "request_user_input_async", "send_user_message_question_reply"].map { Array($0.utf8) }
+                                    "request_user_input", "function_call_output", "send_user_message_question_reply"].map { Array($0.utf8) }
 
     /// A rollout's state, kept current from the lines appended since the last scan.
     private struct Rollout {
         var info: FileInfo?
         var offset: UInt64 = 0
         var status: (Status, Date)?
+        var activity = Date.distantPast
         var model: String?
         var totals: [String: Any]?   // the newest running total_token_usage
-        /// A question Codex asked in its latest turn (request_user_input_async) that has no
-        /// reply yet. No hook covers these, so this is how Muster knows Codex is asking.
-        var question: (id: String, text: String, at: Date)?
+        /// Async questions can outlive the turn that asked them. Keep each unanswered call
+        /// so answering a newer question cannot hide an older one.
+        var questions: [String: (texts: [Int: String], at: Date)] = [:]
 
         var result: (Status, Date, [String: Usage], String?)? {
             guard let status else { return nil }
@@ -1401,7 +1404,10 @@ final class CodexReader {
                 usage[model ?? "unknown"] = Usage(input: max(0, n("input_tokens") - cached - write), cacheWrite5m: write, cacheWrite1h: 0,
                                                   cacheRead: cached, output: n("output_tokens"))
             }
-            if let question { return (.needsYou, max(question.at, status.1), usage, question.text) }
+            if let batch = questions.values.max(by: { $0.at < $1.at }), let index = batch.texts.keys.min(), let first = batch.texts[index] {
+                let text = batch.texts.count > 1 ? "\(first) (and \(batch.texts.count - 1) more)" : first
+                return (.needsYou, max(batch.at, status.1), usage, text)
+            }
             return (status.0, status.1, usage, nil)
         }
     }
@@ -1410,6 +1416,7 @@ final class CodexReader {
 
     private var rollouts: [String: Rollout] = [:]
     private var rows: [Row]?
+    private var rowsReadable = true
     private var dbStamp: [FileInfo?] = []
     private var connection: SQLiteRO.Connection?
     private let tree = DirTree()
@@ -1429,24 +1436,26 @@ final class CodexReader {
         guard fd >= 0 else { return }
         defer { close(fd) }
         var next = r
-        var haveStatus = false, haveTotals = false, haveModel = false, haveQuestion = false
-        var replied: Set<String> = []   // call ids answered later in the file
+        var haveStatus = false, haveTotals = false, haveModel = false
+        var replied: [String: Set<Int>] = [:]
+        var completed: Set<String> = []
         next.offset = LineReader.reverse(fd, from: r.offset, to: f.size) { line in
             guard Bytes.has(line, eventKeys), let d = decode(line) else { return true }
             let p = d["payload"] as? [String: Any]
-            if !haveQuestion {
-                // Newest first: a reply names the questions it answers; the newest question
-                // decides; reaching the start of the turn means it asked nothing.
-                if p?["type"] as? String == "message", let text = Self.text(p), text.contains("send_user_message_question_reply") {
-                    replied.formUnion(Self.callIDs(text))
-                } else if p?["type"] as? String == "function_call", p?["name"] as? String == "request_user_input_async" {
-                    let id = p?["call_id"] as? String ?? ""
-                    next.question = replied.contains(id) ? nil : (id, Self.question(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
-                    haveQuestion = true
-                } else if p?["type"] as? String == "task_started" {
-                    next.question = nil
-                    haveQuestion = true
+            if p?["type"] as? String == "message", let text = Self.text(p), text.contains("send_user_message_question_reply") {
+                for reply in Self.questionReplies(text) {
+                    if let index = reply.index { replied[reply.call, default: []].insert(index) }
+                    else { completed.insert(reply.call) }
                 }
+            } else if p?["type"] as? String == "function_call_output", let id = p?["call_id"] as? String {
+                let output = (p?["output"] as? String).flatMap { $0.data(using: .utf8) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+                if output?["accepted"] as? Bool != true { completed.insert(id) }
+            } else if p?["type"] as? String == "function_call",
+                      let name = (p?["name"] as? String)?.split(separator: ".").last,
+                      name == "request_user_input_async" || name == "request_user_input",
+                      let id = p?["call_id"] as? String, !completed.contains(id) {
+                next.questions[id] = (Self.questionTexts(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
             }
             if !haveModel, d["type"] as? String == "turn_context", let m = p?["model"] as? String {
                 next.model = m
@@ -1454,6 +1463,7 @@ final class CodexReader {
             }
             switch p?["type"] as? String {
             case "token_count":
+                if let at = parseISO(d["timestamp"]) { next.activity = max(next.activity, at) }
                 if !haveTotals, let info = p?["info"] as? [String: Any] {
                     next.totals = info["total_token_usage"] as? [String: Any] ?? [:]
                     haveTotals = true
@@ -1465,15 +1475,20 @@ final class CodexReader {
             default:
                 break
             }
-            return !(haveStatus && haveTotals && haveModel && haveQuestion)
+            return true
         }
         // A reply appended later answers a question read on an earlier scan.
-        if let q = next.question, replied.contains(q.id) { next.question = nil }
+        for id in completed { next.questions[id] = nil }
+        for (id, indices) in replied {
+            guard var batch = next.questions[id] else { continue }
+            for index in indices { batch.texts[index] = nil }
+            next.questions[id] = batch.texts.isEmpty ? nil : batch
+        }
         r = next
     }
 
     private static func text(_ p: [String: Any]?) -> String? {
-        (p?["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n")
+        (p?["content"] as? String) ?? (p?["content"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined(separator: "\n")
     }
 
     private static func callIDs(_ text: String) -> Set<String> {
@@ -1481,12 +1496,27 @@ final class CodexReader {
         return Set(words.filter { $0.hasPrefix("call_") }.map(String.init))
     }
 
-    /// The first question's text, and how many more there are.
-    private static func question(_ arguments: String?) -> String {
+    private static func questionReplies(_ text: String) -> [(call: String, index: Int?)] {
+        let body = text.components(separatedBy: "<send_user_message_question_reply>").last?
+            .components(separatedBy: "</send_user_message_question_reply>").first ?? text
+        guard let records = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [[String: Any]] else {
+            return callIDs(text).map { ($0, nil) } // older replies identified only the call
+        }
+        return records.compactMap { record in
+            let raw = record["questionItemId"] as? String ?? ""
+            guard let parts = try? JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [Any],
+                  let call = parts.compactMap({ $0 as? String }).first(where: { $0.hasPrefix("call_") }) else { return nil }
+            return (call, parts.count > 2 ? parts.last as? Int : nil)
+        }
+    }
+
+    private static func questionTexts(_ arguments: String?) -> [Int: String] {
         let d = arguments.flatMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) } as? [String: Any]
-        let qs = (d?["questions"] as? [[String: Any]] ?? []).compactMap { ($0["title"] ?? $0["question"]) as? String }
-        guard let first = qs.first else { return "Codex has a question" }
-        return qs.count > 1 ? "\(first) (and \(qs.count - 1) more)" : first
+        let qs = d?["questions"] as? [[String: Any]] ?? []
+        guard !qs.isEmpty else { return [0: "Codex has a question"] }
+        return Dictionary(uniqueKeysWithValues: qs.enumerated().map { index, q in
+            (index, (q["title"] ?? q["question"]) as? String ?? "Codex has a question")
+        })
     }
 
     /// A rollout's state. Its path is whatever Codex stored, which needn't match how
@@ -1519,18 +1549,19 @@ final class CodexReader {
             return []
         }
         let cutoff = Int64((now.timeIntervalSince1970 - recentWindow) * 1000)
-        if rows == nil || changes.touches(root) {
+        if rows == nil || !rowsReadable || changes.touches(root) {
             let stamp = [db, stat(db.path + "-wal")]
-            if rows == nil || stamp != dbStamp {
-                dbStamp = stamp
+            if rows == nil || !rowsReadable || stamp != dbStamp {
                 // An open connection would keep reading a file that just became unreadable.
                 if access(db.path, R_OK) != 0 { connection = nil }
-                rows = access(db.path, R_OK) != 0 ? nil : SQLiteRO.connection(db.path, &connection, ino: db.ino)?.rows(
+                let refreshed: [Row]? = access(db.path, R_OK) != 0 ? nil : SQLiteRO.connection(db.path, &connection, ino: db.ino)?.rows(
                     "SELECT id, rollout_path, COALESCE(NULLIF(name,''), NULLIF(title,''), first_user_message, ''), cwd, updated_at_ms " +
                     "FROM threads WHERE archived = 0 AND updated_at_ms > ?", [cutoff])?.compactMap { r in
                         guard let id = r[0] as? String, let path = r[1] as? String else { return nil }
                         return Row(id: id, path: path, title: r[2] as? String ?? "", cwd: r[3] as? String ?? "", updated: r[4] as? Int64 ?? 0)
                     }
+                rowsReadable = refreshed != nil
+                if let refreshed { rows = refreshed; dbStamp = stamp }
             }
         }
         guard let rows else {
@@ -1544,6 +1575,7 @@ final class CodexReader {
             var s = Session(agent: .codex, sid: r.id, status: res.0, since: res.1,
                             title: String(r.title.prefix(80)), project: r.cwd, appID: "")
             s.asking = res.3
+            s.lastActivity = rollouts[r.path]?.activity
             s.account(res.2)
             return s
         }
@@ -1551,7 +1583,7 @@ final class CodexReader {
             let keep = Set(live.map(\.path))
             rollouts = rollouts.filter { keep.contains($0.key) }
         }
-        state = .ok(found.count)
+        state = rowsReadable ? .ok(found.count) : .unreadable("Can't read Codex's thread list. Will try again.")
         return found
     }
 
@@ -1649,9 +1681,9 @@ final class CursorReader {
 
     /// The Agents window's chat list, re-read only when the database or its WAL changes.
     private func headers(now: Date, changes: Changes) -> [String: [String: Any]] {
-        if let c = headerCache, !changes.touches(parent(db)) { return c.value }
+        if headersReadable, let c = headerCache, !changes.touches(parent(db)) { return c.value }
         let key = [stat(db), stat(db + "-wal")]
-        if let c = headerCache, c.key == key { return c.value }
+        if headersReadable, let c = headerCache, c.key == key { return c.value }
         var out: [String: [String: Any]] = [:]
         let cutoff = Int64((now.timeIntervalSince1970 - recentWindow) * 1000)
         // An open connection would keep reading a file that just became unreadable.
@@ -1660,6 +1692,9 @@ final class CursorReader {
             "SELECT composerId, value FROM composerHeaders WHERE isSubagent = 0 AND isArchived = 0 " +
             "AND MAX(lastUpdatedAt, COALESCE(checkpointAt, 0)) > ?", [cutoff])
         headersReadable = rows != nil || key[0] == nil
+        // A lock can clear without changing either file. Keep the last good list
+        // and retry next scan instead of caching the failure as an empty database.
+        guard headersReadable else { return headerCache?.value ?? [:] }
         for r in rows ?? [] {
             if let id = r[0] as? String, let h = jsonObject(r[1]) { out[id] = h }
         }
@@ -1713,10 +1748,10 @@ final class CursorReader {
                                title: (h["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? title,
                                project: ws, appID: "", fault: status == .error || status == .blocked ? fault : nil))
         }
-        if top == nil && headerCache.map({ $0.key[0] == nil }) ?? true {
-            state = .notInstalled
-        } else if !headersReadable {
+        if !headersReadable {
             state = .unreadable("Can't read Cursor's chat list. Its format may have changed.")
+        } else if top == nil && headerCache.map({ $0.key[0] == nil }) ?? true {
+            state = .notInstalled
         } else {
             state = .ok(out.count)
         }

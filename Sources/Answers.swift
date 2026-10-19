@@ -114,7 +114,8 @@ final class Prompts {
     }
 
     func prompt(for s: Session) -> Prompt? {
-        pending.values.filter { $0.agent == s.agent && $0.sessionID == s.sid }.max { $0.created < $1.created }
+        guard s.remoteHost == nil else { return nil }
+        return pending.values.filter { $0.agent == s.agent && $0.sessionID == s.sid }.max { $0.created < $1.created }
     }
 
     func start() {

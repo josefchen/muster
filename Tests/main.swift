@@ -141,6 +141,55 @@ append(root + askRollout, json(["type": "response_item", "payload": ["type": "me
     ["type": "input_text", "text": "<send_user_message_question_reply>\n[{\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_q1\\\"]\"}]"]]]]) + "\n")
 let answeredAsk = askReader.scan(now: now).first
 check(answeredAsk?.status == .done && answeredAsk?.asking == nil, "…and once you reply in Codex, it no longer asks")
+func codexQuestion(_ id: String, _ name: String, _ title: String) -> String {
+    json(["type": "response_item", "timestamp": iso(now), "payload": ["type": "function_call", "name": name,
+         "call_id": id, "arguments": json(["questions": [["question": title]]])]]) + "\n"
+}
+append(root + askRollout, codexQuestion("call_sync", "functions.request_user_input", "Choose a region"))
+check(askReader.scan(now: now).first?.asking == "Choose a region", "namespaced synchronous Codex questions also appear")
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "function_call_output", "call_id": "call_sync", "output": "{\"answers\":{}}"]]) + "\n")
+check(askReader.scan(now: now).first?.asking == nil, "a synchronous answer clears its question")
+append(root + askRollout, codexQuestion("call_older", "functions.request_user_input_async", "Still waiting"))
+append(root + askRollout, json(["type": "event_msg", "timestamp": iso(now), "payload": ["type": "task_started"]]) + "\n")
+check(askReader.scan(now: now).first?.asking == "Still waiting", "starting a new turn keeps an unanswered async question")
+check(CodexReader(home: root + "/ask").scan(now: now).first?.asking == "Still waiting", "restarting Muster also recovers a question from an earlier turn")
+append(root + askRollout, codexQuestion("call_newer", "request_user_input_async", "Second question"))
+_ = askReader.scan(now: now)
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [
+    ["type": "input_text", "text": "<send_user_message_question_reply> call_newer"]]]]) + "\n")
+check(askReader.scan(now: now).first?.asking == "Still waiting", "answering a newer question does not hide an older pending question")
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "function_call_output", "call_id": "call_older", "output": "{}"]]) + "\n")
+append(root + askRollout, json(["type": "response_item", "timestamp": iso(now), "payload": ["type": "function_call", "name": "request_user_input_async", "call_id": "call_batch",
+    "arguments": json(["questions": [["title": "First question"], ["title": "Second question"]]])]]) + "\n")
+check(askReader.scan(now: now).first?.asking == "First question (and 1 more)", "a batch reports the first unanswered question and how many remain")
+func batchReply(_ index: Int) -> String {
+    let body = json([["questionItemId": json(["request_user_input_async", "call_batch", index] as [Any]), "answer": "Yes"]])
+    return json(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [["text": "<send_user_message_question_reply>" + body + "</send_user_message_question_reply>"]]]]) + "\n"
+}
+append(root + askRollout, batchReply(0))
+check(askReader.scan(now: now).first?.asking == "Second question", "answering one item in a batch keeps the other question visible")
+check(CodexReader(home: root + "/ask").scan(now: now).first?.asking == "Second question", "a partially answered batch also survives restarting the reader")
+append(root + askRollout, batchReply(1))
+check(askReader.scan(now: now).first?.asking == nil, "answering the last item clears the batch")
+
+write("/long-turn/.codex/sessions/rollout.jsonl", [
+    json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-1800)), "payload": ["type": "task_started"]]),
+    json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-5)), "payload": [
+        "type": "token_count", "info": ["total_token_usage": ["input_tokens": 100, "output_tokens": 20]]]]),
+].joined(separator: "\n") + "\n")
+sqlite("/long-turn/.codex/state_5.sqlite", [
+    "CREATE TABLE threads (id TEXT, rollout_path TEXT, name TEXT, title TEXT, first_user_message TEXT, cwd TEXT, archived INT, updated_at_ms INT)",
+    "INSERT INTO threads VALUES ('long', '\(root)/long-turn/.codex/sessions/rollout.jsonl', '', 'Long task', '', '/work/long', 0, \(Int64(now.timeIntervalSince1970 * 1000)))",
+])
+let longTurnReader = CodexReader(home: root + "/long-turn")
+let longTurn = longTurnReader.scan(now: now).first
+check(longTurn?.status == .working && now.timeIntervalSince(longTurn?.lastActivity ?? .distantPast) < 10,
+      "a long Codex turn records fresh activity while token events are still arriving")
+check(now.timeIntervalSince(longTurn?.since ?? now) > 1200,
+      "token activity does not change the status timestamp used to resolve approvals")
+append(root + "/long-turn/.codex/sessions/rollout.jsonl",
+       json(["type": "event_msg", "timestamp": iso(now), "payload": ["type": "task_complete"]]) + "\n")
+check(longTurnReader.scan(now: now).first?.status == .done, "the long Codex turn still becomes done when it completes")
 
 print("Cursor")
 let header = json(["name": "Polish onboarding", "hasBlockingPendingActions": true,
@@ -362,6 +411,55 @@ let lockedCursor = cursorReader.scan(now: now, changes: Changes())
 chmod(root + "/.cursor/projects", 0o755)
 check(!lockedCursor.contains { $0.sid == "c2" }, "an unreadable Cursor projects folder drops its file-only chats, though FSEvents says nothing")
 check(cursorReader.scan(now: now, changes: Changes()).contains { $0.sid == "c2" }, "…which come back")
+
+print("Database recovery")
+sqlite("/database/errors.sqlite", ["CREATE TABLE numbers (n INTEGER)"])
+let partialRows = SQLiteRO.rows(root + "/database/errors.sqlite",
+    "SELECT abs(n) FROM (SELECT 1 AS n UNION ALL SELECT -9223372036854775808)")
+check(partialRows == nil, "a query that fails after its first row never returns a partial session list")
+
+let lockedHome = root + "/database/cursor"
+let lockedDBPath = lockedHome + "/Library/Application Support/Cursor/User/globalStorage/state.vscdb"
+sqlite(String(lockedDBPath.dropFirst(root.count)), [
+    "CREATE TABLE composerHeaders (composerId TEXT, value TEXT, isSubagent INT, isArchived INT, lastUpdatedAt INT, checkpointAt INT)",
+    "INSERT INTO composerHeaders VALUES ('retry', '\(header.replacingOccurrences(of: "'", with: "''"))', 0, 0, \(Int64(now.timeIntervalSince1970 * 1000)), NULL)",
+])
+var writer: OpaquePointer?
+check(sqlite3_open(lockedDBPath, &writer) == SQLITE_OK
+      && sqlite3_exec(writer, "BEGIN EXCLUSIVE", nil, nil, nil) == SQLITE_OK, "the recovery fixture holds an exclusive database lock")
+let recoveringCursor = CursorReader(home: lockedHome)
+_ = recoveringCursor.scan(now: now)
+check({ if case .unreadable = recoveringCursor.state { return true }; return false }(), "a locked Cursor database reports that it could not be read")
+sqlite3_exec(writer, "ROLLBACK", nil, nil, nil)
+sqlite3_close(writer)
+check(recoveringCursor.scan(now: now, changes: Changes()).contains { $0.sid == "retry" },
+      "Cursor retries a failed read after the lock clears, even without a file event or a database write")
+sqlite3_open(lockedDBPath, &writer)
+sqlite3_exec(writer, "BEGIN EXCLUSIVE", nil, nil, nil)
+try! fm.setAttributes([.modificationDate: now.addingTimeInterval(2)], ofItemAtPath: lockedDBPath)
+check(recoveringCursor.scan(now: now).contains { $0.sid == "retry" },
+      "a transient Cursor read failure keeps the last known chat list")
+check({ if case .unreadable = recoveringCursor.state { return true }; return false }(),
+      "cached Cursor chats do not hide the read failure")
+sqlite3_exec(writer, "ROLLBACK", nil, nil, nil)
+sqlite3_close(writer)
+_ = recoveringCursor.scan(now: now, changes: Changes())
+check(recoveringCursor.state == .ok(1), "Cursor clears its read warning on the next successful scan")
+
+let recoveringCodex = CodexReader(home: root)
+_ = recoveringCodex.scan(now: now)
+let codexDBPath = root + "/.codex/state_5.sqlite"
+sqlite3_open(codexDBPath, &writer)
+sqlite3_exec(writer, "BEGIN EXCLUSIVE", nil, nil, nil)
+try! fm.setAttributes([.modificationDate: now.addingTimeInterval(2)], ofItemAtPath: codexDBPath)
+check(recoveringCodex.scan(now: now).contains { $0.sid == "t1" },
+      "a transient Codex read failure keeps the last known thread list")
+check({ if case .unreadable = recoveringCodex.state { return true }; return false }(),
+      "cached Codex threads do not hide the read failure")
+sqlite3_exec(writer, "ROLLBACK", nil, nil, nil)
+sqlite3_close(writer)
+_ = recoveringCodex.scan(now: now, changes: Changes())
+check(recoveringCodex.state == .ok(1), "Codex retries after the lock clears without waiting for a database write")
 
 print("Pricing")
 check(Pricing.price(for: "claude-haiku-4-5-20251001") != nil, "dated model ids resolve by prefix")
@@ -976,6 +1074,53 @@ try! fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stalled)
 let beforeReviewTimeout = Date()
 let stalledResult = CodexHookReview.read(executable: stalled, hookPath: reviewPath, command: reviewCommand, home: root, timeout: 0.1)
 check(stalledResult == .unavailable && Date().timeIntervalSince(beforeReviewTimeout) < 1, "a stalled status client is killed and reaped within its deadline")
+
+print("SSH sessions")
+check(["vml", "simpc3", "mac-workstation", "josef@devbox", "2001:db8::1"].allSatisfy(SSHHost.valid), "SSH hosts accept aliases, users and IPv6 addresses")
+check(SSHHost(name: "josef@devbox").codexHostID == "remote-ssh-discovered:josef%40devbox", "Codex host routing encodes user and hostname destinations")
+check(["", "-oProxyCommand=sh", "user@-bad", "@host", "host;touch /tmp/x", "host\nother", "host name", "a@b@c"].allSatisfy { !SSHHost.valid($0) }, "SSH hosts reject options, shell syntax and ambiguous destinations")
+write("/ssh/.ssh/config", "Include extra-*\n#Host do-not-connect\nHost vml VML *.internal !excluded # ignored-alias\n  HostName devbox\nHost mac-workstation\n")
+write("/ssh/.ssh/extra-hosts", "Host simpc3\nInclude config\n")
+check(SSHHost.discover(home: root + "/ssh") == ["mac-workstation", "simpc3", "vml"], "SSH discovery follows includes, handles cycles and skips wildcard and duplicate aliases")
+let remoteFrameData = try! JSONSerialization.data(withJSONObject: ["protocol": 1, "hostname": "devbox", "user": "maker", "errors": [], "limited": false,
+    "sessions": [["agent": "codex", "sid": "shared", "status": "needsYou", "since": now.timeIntervalSince1970,
+                  "title": "Remote task", "project": "/work/lexer", "asking": "Which store?"]]])
+let remoteFrame = SSHFrame.decode(remoteFrameData)
+let remoteSession = remoteFrame?.sessions.first?.session(host: "vml")
+var localSession = remoteSession!
+localSession.remoteHost = nil
+check(remoteSession?.id != localSession.id && remoteSession?.projectName.contains("vml") == true,
+      "a remote session has its own identity and shows its host beside the project")
+check(remoteSession?.asking == "Which store?" && remoteSession?.status == .needsYou, "remote questions keep their waiting state and text")
+check(SSHFrame.decode(Data(#"{"protocol":2}"#.utf8)) == nil && SSHFrame.decode(Data(repeating: 0x20, count: (4 << 20) + 1)) == nil,
+      "unknown or oversized SSH summaries are rejected")
+let quotedScript = "print('private sample')\n"
+check(SSHStream.command(quotedScript).contains("'\\''") && SSHStream.command(quotedScript).hasPrefix("python3 -u -c '"),
+      "the remote helper is shell-quoted as one constant Python command")
+let fakeSSH = root + "/fake-ssh"
+let argumentsFile = root + "/ssh-arguments"
+let pidFile = root + "/ssh-pid"
+try! ("#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argumentsFile + "'\nprintf '%s\\n' \"$$\" > '" + pidFile
+      + "'\nprintf '%s\\n' '" + String(decoding: remoteFrameData, as: UTF8.self) + "'\nexec /bin/cat >/dev/null\n")
+    .write(toFile: fakeSSH, atomically: true, encoding: .utf8)
+chmod(fakeSSH, 0o700)
+var sshFrameReceived = false
+var sshTransport: SSHStream? = SSHStream()
+sshTransport?.onFrame = { sshFrameReceived = $0.sessions.first?.sid == "shared" }
+sshTransport?.start(host: "vml", script: quotedScript, executable: fakeSSH)
+func pump(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition(), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    return condition()
+}
+check(pump({ sshFrameReceived }), "an SSH stream delivers a complete summary on the main thread")
+let sshArguments = (try? String(contentsOfFile: argumentsFile, encoding: .utf8)) ?? ""
+check(sshArguments.contains("BatchMode=yes") && sshArguments.contains("ForwardAgent=no") && sshArguments.contains("ClearAllForwardings=yes")
+      && sshArguments.contains("--\nvml\n"), "SSH uses existing access without interactive prompts or forwarding")
+let sshPID = Int32(((try? String(contentsOfFile: pidFile, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+sshTransport?.stop()
+sshTransport = nil
+check(sshPID > 1 && pump({ kill(sshPID, 0) != 0 }), "disabling a host ends its SSH process even when the stream's owner releases it")
 
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")

@@ -84,6 +84,7 @@ final class Headless {
         pipeline()
         roundTrips()
         opening()
+        remoteSessions()
         files()
         failSafe()
         abuse()
@@ -330,6 +331,10 @@ final class Headless {
         app.act("front", ["agent": "codex"])
         let run = codexHook(x.permissionPayload(command: "printf check"))
         let xp = held("codex", x.id, "permission", "the installed Codex curl command reaches setup")
+        x.append(x.tokens(100, at: Date().addingTimeInterval(2)))
+        settle()
+        check(app.state()?.prompt(agent: "codex", sid: x.id) != nil,
+              "a token heartbeat cannot resolve a pending Codex approval")
         check(app.state()?.hookSetup("codex") == "received", "Codex is not ready merely because its command ran")
         app.act("front", ["agent": "codex"])
         check(app.state()?.prompt(agent: "codex", sid: x.id) != nil,
@@ -801,6 +806,74 @@ final class Headless {
 
     // MARK: files
 
+    private func remoteSessions() {
+        section("Remote sessions")
+        app.act("front", ["agent": NSNull()])
+        let sid = seeded.codex.sid
+        let remoteID = "ssh:3:vml:codex:" + sid
+        func summary(_ status: String = "needsYou", errors: [String] = []) -> [String: Any] {
+            ["protocol": 1, "hostname": "fixture-devbox", "user": "fixture", "errors": errors, "limited": false,
+             "sessions": [["agent": "codex", "sid": sid, "status": status, "since": Date().timeIntervalSince1970 + 1,
+                           "title": "Remote approval workflow", "project": "/work/lexer", "asking": "Which database should the cache use?"]]]
+        }
+        func capture(_ endpoint: String, _ name: String) {
+            let result = app.post(endpoint, ["name": name])
+            check(result?["captured"] as? Bool == true, "renders \(name)")
+            if let source = result?["path"] as? String,
+               let directory = ProcessInfo.processInfo.environment["MUSTER_E2E_DIAGNOSTICS"] {
+                let target = URL(fileURLWithPath: directory).appendingPathComponent("ssh-ui")
+                try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                try? FileManager.default.copyItem(at: URL(fileURLWithPath: source), to: target.appendingPathComponent(name + ".png"))
+            }
+        }
+        let firstFrame = Date()
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        check(Date().timeIntervalSince(firstFrame) < 2, "receiving the first SSH summary keeps the main thread responsive")
+        expect(app, "a remote question appears beside the local session with the same ID") {
+            $0.status(remoteID) == "needsYou" && $0.session(self.seeded.codex.key) != nil
+        }
+        expect(app, "the alert shows the remote question and says where to answer") {
+            $0.alertSession == remoteID && $0.alertHints?.contains("Answer on vml") == true
+        }
+        check(app.state()?.promptID(remoteID) == nil, "a remote row never borrows a local approval connection")
+        capture("/alert-capture", "ssh-alert")
+        app.act("search")
+        app.act("type", ["text": "vml"])
+        expect(app, "searching by SSH host finds its session") { $0.items("deck") == [remoteID] }
+        app.act("key", ["key": "escape"])
+        app.post("/remote-summary", ["host": "simpc3", "summary": summary("working")])
+        expect(app, "the same session ID on a second SSH host stays separate") { $0.session("ssh:6:simpc3:codex:" + sid) != nil }
+        app.post("/remote-offline", ["host": "vml"])
+        expect(app, "disconnecting keeps the last summary and marks it offline") { $0.session(remoteID)?["remoteOffline"] as? Bool == true }
+        expect(app, "an offline request is clearly labelled in the alert") { $0.alertHints?.contains("vml offline") == true }
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        expect(app, "a new summary clears the offline state") { $0.session(remoteID)?["remoteOffline"] as? Bool == false }
+        let beforeOpen = fx.opened().count
+        app.post("/open", ["id": remoteID])
+        opened("opening a remote Codex session routes to its SSH host", after: beforeOpen,
+               url: "codex://threads/\(sid)?hostId=remote-ssh-discovered:vml", sid: sid)
+
+        app.post("/settings-preview", ["width": 460, "dark": false])
+        settle()
+        let pressed = app.post("/settings-press", ["identifier": "ssh-host-vml"])?["pressed"] as? Bool == true
+        check(pressed, "the native Settings toggle can disable an SSH host")
+        expect(app, "disabling the host removes its summaries while local work stays") { $0.session(remoteID) == nil && $0.session(self.seeded.codex.key) != nil }
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        check(app.state()?.session(remoteID) == nil, "late summaries cannot re-enable a disabled host")
+        app.post("/remote-enabled", ["host": "vml", "enabled": true])
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        app.post("/remote-offline", ["host": "simpc3"])
+        for (width, dark) in [(460, false), (390, false), (390, true)] {
+            app.post("/settings-preview", ["width": width, "dark": dark])
+            settle()
+            let name = "ssh-settings-\(width)-\(dark ? "dark" : "light")"
+            capture("/settings-capture", name)
+        }
+        app.post("/remote-enabled", ["host": "vml", "enabled": false])
+        app.post("/remote-enabled", ["host": "simpc3", "enabled": false])
+        expect(app, "turning remote monitoring off leaves no remote sessions") { !$0.sessions.contains { $0["remoteHost"] is String } }
+    }
+
     private func bigLine(_ c: ClaudeFixture, bytes: Int) -> Data {
         var d = Data(("{\"type\":\"user\",\"timestamp\":\"\(iso(Date()))\",\"sessionId\":\"\(c.sid)\",\"cwd\":\"\(c.cwd)\"," +
                       "\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_big\",\"content\":\"").utf8)
@@ -816,6 +889,42 @@ final class Headless {
 
     private func files() {
         section("Files")
+        let batch = CodexFixture(fx, project: "question-batch")
+        let call = "call_e2e_batch"
+        batch.write(batch.turnContext(), batch.started(), jsonLine(["timestamp": iso(Date()), "type": "response_item", "payload": [
+            "type": "function_call", "name": "request_user_input_async", "call_id": call,
+            "arguments": String(decoding: json(["questions": [["title": "First batch question"], ["title": "Second batch question"]]]), as: UTF8.self)]]), batch.completed())
+        batch.register(title: "Question batch")
+        expect(app, "a Codex batch shows its first question") { $0.session(batch.key)?["asking"] as? String == "First batch question (and 1 more)" }
+        expect(app, "the batch raises its alert") { $0.alertSession == batch.key }
+        check(app.state()?.alertHints?.contains("Check the connection") == false, "a Codex question does not suggest that approval setup is broken")
+        app.act("alert", ["part": "dismiss"])
+        func reply(_ index: Int) {
+            let id = String(decoding: json(["request_user_input_async", call, index] as [Any]), as: UTF8.self)
+            let body = String(decoding: json([["questionItemId": id, "answer": "Yes"]]), as: UTF8.self)
+            batch.append(jsonLine(["timestamp": iso(Date()), "type": "response_item", "payload": ["type": "message", "role": "user", "content": [
+                ["text": "<send_user_message_question_reply>" + body + "</send_user_message_question_reply>"]]]]))
+        }
+        reply(0)
+        expect(app, "answering one item leaves the second question waiting") { $0.status(batch.key) == "needsYou" && $0.session(batch.key)?["asking"] as? String == "Second batch question" }
+        expect(app, "the remaining question raises a fresh alert after the first was dismissed") { $0.alertSession == batch.key }
+        reply(1)
+        expect(app, "answering the complete batch clears it") { $0.status(batch.key) == "done" && $0.session(batch.key)?["asking"] is NSNull }
+        let long = CodexFixture(fx, project: "long-turn")
+        let old = Date().addingTimeInterval(-1800)
+        long.write(long.turnContext(at: old), long.started(at: old), long.tokens(100, at: Date()))
+        long.register(title: "Long-running task")
+        expect(app, "a Codex turn older than twenty minutes stays working while tokens arrive") { $0.status(long.key) == "working" }
+        let quiet = CodexFixture(fx, project: "quiet-turn")
+        quiet.write(quiet.turnContext(at: old), quiet.started(at: old), quiet.tokens(100, at: old))
+        quiet.register(title: "Quiet task")
+        expect(app, "a Codex turn becomes idle once its activity is stale") { $0.status(quiet.key) == "idle" }
+        quiet.append(quiet.tokens(200))
+        expect(app, "fresh Codex activity brings an idle task back to working") { $0.status(quiet.key) == "working" }
+        quiet.append(quiet.completed())
+        long.append(long.completed())
+        expect(app, "long Codex tasks still move to done when they finish") { $0.status(long.key) == "done" && $0.status(quiet.key) == "done" }
+
         let f = ClaudeFixture(fx, project: "files")
         f.write(f.user("Read the logs"), f.reply("Read them."))
         expect(app, "a fresh transcript reads as done") { $0.status(f.id) == "done" }

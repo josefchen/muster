@@ -48,6 +48,8 @@ final class Store {
     static let demo = CommandLine.arguments.contains("--demo")
 
     func start() {
+        RemoteSessions.shared.onChange = { [weak self] in self?.refreshPrompts() }
+        RemoteSessions.shared.start()
         if Self.demo {
             sources = [.claude: .ok(3), .codex: .ok(2), .cursor: .ok(2)]
             if CommandLine.arguments.contains("--question") { Prompts.shared.addDemoQuestion() }
@@ -93,7 +95,9 @@ final class Store {
                 if enabled.contains(.cursor) { all += self.cursor.scan(now: now, changes: since(.cursor)) }
                 return all.compactMap { s in
                     var s = s
-                    if s.status == .working, now.timeIntervalSince(s.since) > Self.staleWorking { s.status = .idle }
+                    if s.status == .working, now.timeIntervalSince(max(s.since, s.lastActivity ?? s.since)) > Self.staleWorking {
+                        s.status = .idle
+                    }
                     if s.status.section == .recent, now.timeIntervalSince(s.since) > recentWindow { return nil }
                     return s
                 }
@@ -117,7 +121,7 @@ final class Store {
         guard !Self.demo else { return }
         opened[s.id] = Date().timeIntervalSince1970
         UserDefaults.standard.set(opened, forKey: "opened")
-        publish(sessions)
+        publish(lastFound)
     }
 
     private func publish(_ found: [Session]) {
@@ -132,7 +136,7 @@ final class Store {
         }
         let cutoff = Date().timeIntervalSince1970 - 86400
         opened = opened.filter { $0.value > cutoff }
-        var next = found.map { s -> Session in
+        var next = (found + RemoteSessions.shared.sessions).map { s -> Session in
             var s = s
             s.unread = s.status == .done && (opened[s.id] ?? 0) < s.since.timeIntervalSince1970
             if let p = Prompts.shared.prompt(for: s) {
@@ -206,6 +210,24 @@ enum Opener {
         Store.shared.markOpened(s)
         Stats.record(.jumped)
         if E2E.on { E2E.opening = s }
+        if let host = s.remoteHost {
+            // Codex's host-aware thread links use the SSH alias registered by its host discovery.
+            if s.agent == .codex {
+                let hostID = SSHHost(name: host).codexHostID
+                if openURL("codex://threads/\(encode(s.sid))?hostId=\(encode(hostID))") { return }
+            }
+            let alert = NSAlert()
+            alert.messageText = "Session on \(host)"
+            alert.informativeText = "Continue this session on its host. Muster monitors remote requests; answers stay in the agent."
+            alert.addButton(withTitle: "Copy SSH command")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString("ssh -t -- " + host, forType: .string)
+            }
+            return
+        }
         if let host = ProcessHost.app(running: s), !s.agent.bundleIDs.contains(host.bundleIdentifier ?? "") {
             host.activate()
             return

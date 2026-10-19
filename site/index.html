@@ -247,8 +247,8 @@
 </section>
 
 <section class="wrap center reveal" id="how">
-  <h2>Sessions stay local.</h2>
-  <p>Muster reads the session files your agents already write. An agent's question reaches Muster over localhost, and your answer goes back the same way. There's no account and no analytics. The only thing it asks the internet is whether there's a new version, once a day, if you say yes in the tour.</p>
+  <h2>Private by default.</h2>
+  <p>Muster reads the session files your agents already write. Local questions and answers travel over localhost. There's no account and no app analytics. Update checks are optional. The upcoming 1.4 adds SSH monitoring for hosts you choose, with summaries kept on your Mac. See <a href="/privacy">what travels over the connection</a>.</p>
   <div class="diagram" role="img" aria-label="Claude Code, Codex and Cursor on your Mac. Muster reads their session files, and questions and answers travel between them over 127.0.0.1.">
     <div class="scope">Your Mac</div>
     <div class="flow">
@@ -281,7 +281,7 @@
     <div><h3>Will its shortcuts get in the way of my editor?</h3><p>No. Muster takes ⌥↩, ⌥⌫, the arrows and the digits only while a prompt or the switcher is on screen, and lets go of them while you type in another app.</p></div>
     <div><h3>Does it work with several sessions at once?</h3><p>Yes. Every Claude Code, Codex and Cursor session from the last three hours is in one list, with the one that needs you first.</p></div>
     <div><h3>Is it free?</h3><p>Yes. Muster is open source under the MIT License, with no account.</p></div>
-    <div><h3>Does it send my code anywhere?</h3><p>No. It reads the session files your agents write and talks to them over 127.0.0.1. The only network request is a once-a-day check for a new version, which the tour asks about and Settings can turn off.</p></div>
+    <div><h3>Does it send my code anywhere?</h3><p>Muster sends no code or analytics to us. Local agent hooks use 127.0.0.1, and GitHub update checks are optional. In the upcoming 1.4, enabling an SSH host transfers session summaries from that host to your Mac. Full transcripts and raw tool payloads are not copied.</p></div>
     <div><h3>What if Muster quits while an agent is asking?</h3><p>The agent falls back to its own prompt, the same as without Muster.</p></div>
     <div><h3>Can it answer Cursor's prompts?</h3><p>Not yet. Cursor doesn't let another app answer for it, so Muster shows you which chat is waiting and opens it in Cursor.</p></div>
     <div><h3>Which Macs does it run on?</h3><p>macOS 14 or later, on Apple silicon and Intel.</p></div>
