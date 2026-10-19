@@ -15,7 +15,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("enable", "disable"))
     parser.add_argument("host", help="An enabled Muster SSH alias or user@hostname")
+    parser.add_argument("--share-with-agent-relay", action="store_true",
+                        help="Present approvals in Muster and the existing Agent Relay receiver; the first answer wins")
     args = parser.parse_args()
+    if args.action == "disable" and args.share_with_agent_relay:
+        parser.error("Sharing is enabled during setup; disable restores Agent Relay's original hooks.")
     if not re.fullmatch(r"[A-Za-z0-9._:@-]{1,128}", args.host) or any(
             not p or p.startswith("-") for p in args.host.split("@")) or args.host.count("@") > 1:
         parser.error("Use an SSH alias or user@hostname, without SSH options.")
@@ -30,6 +34,8 @@ def main():
     script = (Path(__file__).resolve().parents[1] / "Resources/remote_approvals.py").read_text()
     command = "python3 -u -c " + shlex.quote(script) + (
         " --install-approvals" if args.action == "enable" else " --remove-approvals") + " --controller " + controller
+    if args.share_with_agent_relay:
+        command += " --share-with-agent-relay"
     subprocess.run(["/usr/bin/ssh", "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
                     "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes", "-o", "ControlMaster=no",
                     "-o", "ControlPath=none", "--", args.host, command], check=True)

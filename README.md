@@ -170,7 +170,11 @@ Recorded questions open in the agent on that host. Codex links include the SSH h
 
 Live requests and your answers travel over the same SSH connection. The remote hook uses a private Unix socket; no TCP listener or SSH forwarding is added. Commands and question choices are held in memory while the request waits. If Muster disconnects, the hook returns no decision and the agent asks normally. A 30-second heartbeat timeout also releases requests if the Mac stops responding while SSH remains open. Opening the remote session from Muster hands its waiting request back to the agent. Cursor requests still open in Cursor.
 
-Run `python3 scripts/remote-approvals.py disable vml` to remove this Mac's remote hooks. The installed helper is inert without an enabled relay connection; no background service is installed on the remote host.
+Run `python3 scripts/remote-approvals.py disable vml` to remove this Mac's remote hooks. No background service is installed on the remote host.
+
+**Sharing approvals with Agent Relay.** If the host already has Agent Relay's Python approval hook, run `python3 scripts/remote-approvals.py enable vml --share-with-agent-relay`. This explicitly lets Muster's hook invoke that existing Relay client. Both receivers get the request; the first answer returns to the agent and withdraws the other copy. Unavailable receivers and empty responses do not override an answer. Opening the session from Muster releases both copies so the agent can ask natively. Relay can still answer while Muster is closed.
+
+Sharing preserves unrelated policy hooks and saves Relay's original hook definitions in a private file on the host. Disabling Muster's remote approvals restores those definitions. If another installer adds independent Relay hooks again, rerun the enable command to consolidate them. Review the existing Relay client before enabling sharing; it keeps its own account and authentication settings.
 
 </details>
 
