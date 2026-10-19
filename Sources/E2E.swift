@@ -32,7 +32,8 @@ enum E2E {
     }()
     static let ui = on && env["MUSTER_E2E_UI"] == "1"
     /// Panels on screen, key focus and global shortcuts: always, except in headless e2e runs.
-    static var showsUI: Bool { !on || ui }
+    static var showsUI: Bool { !on || ui || capturing }
+    private static var capturing = false
     /// Stands in for typing in another app (true) or not (false); nil reads the real keyboard,
     /// which e2e runs never do, so someone typing during a run can't change its result.
     static var typing: Bool? = on ? false : nil
@@ -97,6 +98,30 @@ enum E2E {
     }
 
     private static let panels = NSHashTable<GlassPanel>.weakObjects()
+
+    /// Capture our own window through the compositor: SwiftUI and glass are layer-backed
+    /// and cannot be captured by NSView.cacheDisplay.
+    static func capture(_ window: NSWindow, to file: URL) -> Bool {
+        guard on, window.windowNumber > 0 else { return false }
+        let opacity = window.alphaValue
+        capturing = true
+        defer { window.alphaValue = opacity; capturing = false }
+        window.alphaValue = 1
+        window.displayIfNeeded()
+        CATransaction.flush()
+        // SDK 26 retires this API at compile time, but older systems still provide it.
+        // Use it only in fixture mode, for this process's own NSWindow, so visual QA
+        // does not ask for access to the rest of the user's screen.
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        guard let handle = dlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics", RTLD_LAZY) else { return false }
+        defer { dlclose(handle) }
+        guard let symbol = dlsym(handle, "CGWindowListCreateImage") else { return false }
+        let capture = unsafeBitCast(symbol, to: Capture.self)
+        guard let image = capture(.null, CGWindowListOption.optionIncludingWindow.rawValue,
+            UInt32(window.windowNumber), CGWindowImageOption.boundsIgnoreFraming.rawValue)?.takeRetainedValue(),
+            let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return false }
+        do { try data.write(to: file); return true } catch { return false }
+    }
 
     /// Every glass panel checks in here; headless runs keep it invisible to the pointer.
     static func adopt(_ panel: GlassPanel) {
@@ -193,6 +218,38 @@ enum E2E {
         switch (r.method, r.path) {
         case ("GET", "/state"):
             return (200, state())
+        case ("POST", "/remote-summary"):
+            guard let host = r.body["host"] as? String, SSHHost.valid(host),
+                  let summary = r.body["summary"] as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: summary), let frame = SSHFrame.decode(data) else {
+                return (400, ["error": "invalid remote summary"])
+            }
+            RemoteSessions.shared.preview(host: host, frame: frame)
+            return (200, ["ok": true])
+        case ("POST", "/remote-offline"):
+            guard let host = r.body["host"] as? String else { return (400, ["error": "missing host"]) }
+            RemoteSessions.shared.previewOffline(host)
+            return (200, ["ok": true])
+        case ("POST", "/remote-enabled"):
+            guard let host = r.body["host"] as? String, let enabled = r.body["enabled"] as? Bool else { return (400, ["error": "missing host"]) }
+            RemoteSessions.shared.setEnabled(host, enabled)
+            return (200, ["ok": true])
+        case ("POST", "/settings-preview"):
+            (NSApp.delegate as? AppDelegate)?.settings.previewSettings(width: CGFloat(r.body["width"] as? Double ?? 460), dark: r.body["dark"] as? Bool ?? false)
+            return (200, ["ok": true])
+        case ("POST", "/settings-press"):
+            guard let id = r.body["identifier"] as? String else { return (400, ["error": "missing control"]) }
+            return (200, ["pressed": (NSApp.delegate as? AppDelegate)?.settings.pressSettingsControl(id) ?? false])
+        case ("POST", "/settings-capture"), ("POST", "/alert-capture"):
+            guard let name = r.body["name"] as? String, name.range(of: #"^[a-zA-Z0-9-]+$"#, options: .regularExpression) != nil else {
+                return (400, ["error": "invalid filename"])
+            }
+            let file = URL(fileURLWithPath: home).appendingPathComponent(name + ".png")
+            if r.path == "/alert-capture" {
+                guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "muster.alert" }) else { return (200, ["captured": false]) }
+                return (200, ["captured": capture(window, to: file), "path": file.path])
+            }
+            return (200, ["captured": (NSApp.delegate as? AppDelegate)?.settings.captureSettings(file) ?? false, "path": file.path])
         case ("POST", "/answer"):
             guard let id = (r.body["prompt"] as? String).flatMap(UUID.init(uuidString:)), let p = Prompts.shared.pending[id] else {
                 return (404, ["error": "no such prompt"])
@@ -370,7 +427,8 @@ enum E2E {
         let sessions: [[String: Any]] = Store.shared.sessions.map { s in
             ["id": s.id, "agent": s.agent.rawValue, "sid": s.sid, "status": name(s.status), "unread": s.unread,
              "promptID": s.promptID?.uuidString ?? NSNull(), "since": s.since.timeIntervalSince1970, "appID": s.appID,
-             "project": s.project, "title": s.title, "tokens": s.tokens, "fault": s.fault?.label ?? NSNull()]
+             "project": s.project, "title": s.title, "tokens": s.tokens, "fault": s.fault?.label ?? NSNull(),
+             "remoteHost": s.remoteHost ?? NSNull(), "remoteOffline": s.remoteOffline, "asking": s.asking ?? NSNull()]
         }
         let prompts: [[String: Any]] = Prompts.shared.pending.values.sorted { $0.created < $1.created }.map { p in
             var d: [String: Any] = ["id": p.id.uuidString, "agent": p.agent.rawValue, "sid": p.sessionID, "blocksNative": p.blocksNative]

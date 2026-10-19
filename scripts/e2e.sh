@@ -63,6 +63,7 @@ build_app() {
   bundle="$WORK/$1/MusterE2E.app"
   mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
   cp "$HERE/CHANGELOG.md" "$HERE/Resources/AppIcon.icns" "$bundle/Contents/Resources/"
+  cp "$HERE/Resources/remote_sessions.py" "$bundle/Contents/Resources/"
   swiftc -O -swift-version 5 -target "$1-apple-macos14" -o "$bundle/Contents/MacOS/MusterE2E" "$HERE"/Sources/*.swift
   plist="$bundle/Contents/Info.plist"
   cp "$HERE/Resources/Info.plist" "$plist"

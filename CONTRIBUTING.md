@@ -16,9 +16,10 @@ Thanks for helping. A few things keep Muster fast and trustworthy.
 
 - **Native first.** AppKit for anything on screen all day. SwiftUI is fine for
   windows that open occasionally, like Settings.
-- **Read-only, local only.** Muster makes no network requests besides the opt-in update check, and only writes
-  to another app's files when you turn on prompt answering, which edits that agent's
-  hook settings with a backup.
+- **Read-only, private by default.** Local agent data stays on the Mac. Opt-in SSH monitoring transfers
+  summaries from enabled hosts over existing SSH access; it installs no hooks or helper files remotely.
+  The other network feature is the opt-in GitHub update check. Writing another app's files requires
+  turning on local prompt answering, which edits that agent's hook settings with a backup.
 - **Cheap when idle.** No polling where a file system event will do. Views are
   updated in place, not rebuilt. Measure memory with `footprint -p $(pgrep -x Muster)`
   before and after a change that touches scanning or drawing.

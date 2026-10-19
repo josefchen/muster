@@ -43,6 +43,7 @@ lipo -create "$OUT/Muster-arm64" "$OUT/Muster-x86_64" -output "$APP/Contents/Mac
 rm "$OUT"/Muster-arm64 "$OUT"/Muster-x86_64
 cp "$HERE/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$HERE/Resources/AppIcon.icns" "$HERE/Resources/intro.mp4" "$HERE/CHANGELOG.md" "$APP/Contents/Resources/"
+cp "$HERE/Resources/remote_sessions.py" "$APP/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(git -C "$HERE" rev-list --count HEAD)" "$APP/Contents/Info.plist"
 

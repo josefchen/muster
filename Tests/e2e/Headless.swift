@@ -84,6 +84,7 @@ final class Headless {
         pipeline()
         roundTrips()
         opening()
+        remoteSessions()
         files()
         failSafe()
         abuse()
@@ -804,6 +805,74 @@ final class Headless {
     }
 
     // MARK: files
+
+    private func remoteSessions() {
+        section("Remote sessions")
+        app.act("front", ["agent": NSNull()])
+        let sid = seeded.codex.sid
+        let remoteID = "ssh:3:vml:codex:" + sid
+        func summary(_ status: String = "needsYou", errors: [String] = []) -> [String: Any] {
+            ["protocol": 1, "hostname": "fixture-devbox", "user": "fixture", "errors": errors, "limited": false,
+             "sessions": [["agent": "codex", "sid": sid, "status": status, "since": Date().timeIntervalSince1970 + 1,
+                           "title": "Remote approval workflow", "project": "/work/lexer", "asking": "Which database should the cache use?"]]]
+        }
+        func capture(_ endpoint: String, _ name: String) {
+            let result = app.post(endpoint, ["name": name])
+            check(result?["captured"] as? Bool == true, "renders \(name)")
+            if let source = result?["path"] as? String,
+               let directory = ProcessInfo.processInfo.environment["MUSTER_E2E_DIAGNOSTICS"] {
+                let target = URL(fileURLWithPath: directory).appendingPathComponent("ssh-ui")
+                try? FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+                try? FileManager.default.copyItem(at: URL(fileURLWithPath: source), to: target.appendingPathComponent(name + ".png"))
+            }
+        }
+        let firstFrame = Date()
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        check(Date().timeIntervalSince(firstFrame) < 2, "receiving the first SSH summary keeps the main thread responsive")
+        expect(app, "a remote question appears beside the local session with the same ID") {
+            $0.status(remoteID) == "needsYou" && $0.session(self.seeded.codex.key) != nil
+        }
+        expect(app, "the alert shows the remote question and says where to answer") {
+            $0.alertSession == remoteID && $0.alertHints?.contains("Answer on vml") == true
+        }
+        check(app.state()?.promptID(remoteID) == nil, "a remote row never borrows a local approval connection")
+        capture("/alert-capture", "ssh-alert")
+        app.act("search")
+        app.act("type", ["text": "vml"])
+        expect(app, "searching by SSH host finds its session") { $0.items("deck") == [remoteID] }
+        app.act("key", ["key": "escape"])
+        app.post("/remote-summary", ["host": "simpc3", "summary": summary("working")])
+        expect(app, "the same session ID on a second SSH host stays separate") { $0.session("ssh:6:simpc3:codex:" + sid) != nil }
+        app.post("/remote-offline", ["host": "vml"])
+        expect(app, "disconnecting keeps the last summary and marks it offline") { $0.session(remoteID)?["remoteOffline"] as? Bool == true }
+        expect(app, "an offline request is clearly labelled in the alert") { $0.alertHints?.contains("vml offline") == true }
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        expect(app, "a new summary clears the offline state") { $0.session(remoteID)?["remoteOffline"] as? Bool == false }
+        let beforeOpen = fx.opened().count
+        app.post("/open", ["id": remoteID])
+        opened("opening a remote Codex session routes to its SSH host", after: beforeOpen,
+               url: "codex://threads/\(sid)?hostId=remote-ssh-discovered:vml", sid: sid)
+
+        app.post("/settings-preview", ["width": 460, "dark": false])
+        settle()
+        let pressed = app.post("/settings-press", ["identifier": "ssh-host-vml"])?["pressed"] as? Bool == true
+        check(pressed, "the native Settings toggle can disable an SSH host")
+        expect(app, "disabling the host removes its summaries while local work stays") { $0.session(remoteID) == nil && $0.session(self.seeded.codex.key) != nil }
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        check(app.state()?.session(remoteID) == nil, "late summaries cannot re-enable a disabled host")
+        app.post("/remote-enabled", ["host": "vml", "enabled": true])
+        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        app.post("/remote-offline", ["host": "simpc3"])
+        for (width, dark) in [(460, false), (390, false), (390, true)] {
+            app.post("/settings-preview", ["width": width, "dark": dark])
+            settle()
+            let name = "ssh-settings-\(width)-\(dark ? "dark" : "light")"
+            capture("/settings-capture", name)
+        }
+        app.post("/remote-enabled", ["host": "vml", "enabled": false])
+        app.post("/remote-enabled", ["host": "simpc3", "enabled": false])
+        expect(app, "turning remote monitoring off leaves no remote sessions") { !$0.sessions.contains { $0["remoteHost"] is String } }
+    }
 
     private func bigLine(_ c: ClaudeFixture, bytes: Int) -> Data {
         var d = Data(("{\"type\":\"user\",\"timestamp\":\"\(iso(Date()))\",\"sessionId\":\"\(c.sid)\",\"cwd\":\"\(c.cwd)\"," +

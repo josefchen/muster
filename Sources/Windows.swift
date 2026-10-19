@@ -16,6 +16,37 @@ final class Windows {
         present(w)
     }
 
+    /// Render the actual native form for the isolated test driver.
+    func previewSettings(width: CGFloat, dark: Bool) {
+        guard E2E.on else { return }
+        show()
+        settingsWindow?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        settingsWindow?.setContentSize(NSSize(width: max(360, min(width, 800)), height: 844))
+    }
+
+    func captureSettings(_ file: URL) -> Bool {
+        guard let window = settingsWindow else { return false }
+        return E2E.capture(window, to: file)
+    }
+
+    func pressSettingsControl(_ identifier: String) -> Bool {
+        guard E2E.on, let window = settingsWindow, let root = window.contentView else { return false }
+        func find(_ view: NSView) -> NSView? {
+            if view.identifier?.rawValue == "muster-e2e-" + identifier { return view }
+            return view.subviews.lazy.compactMap(find).first
+        }
+        guard let view = find(root), !view.bounds.isEmpty else { return false }
+        let point = view.convert(NSPoint(x: view.bounds.midX, y: view.bounds.midY), to: nil)
+        for (index, type) in [NSEvent.EventType.leftMouseDown, .leftMouseUp].enumerated() {
+            guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime + Double(index) * 0.01,
+                windowNumber: window.windowNumber, context: nil, eventNumber: index,
+                clickCount: 1, pressure: index == 0 ? 1 : 0) else { return false }
+            NSApp.postEvent(event, atStart: false)
+        }
+        return true
+    }
+
     /// Scans while open; closing stops the scan and lets the window and its data go.
     func showUsage() {
         if let usage { return present(usage.window) }
@@ -51,8 +82,27 @@ final class Windows {
     }
 }
 
+/// An invisible fixture-only view marks a control's rendered bounds for app-local clicks.
+/// It never draws, receives input or appears in production Settings.
+private struct SettingsControlMarker: NSViewRepresentable {
+    let identifier: String
+    final class Marker: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+    func makeNSView(context: Context) -> Marker {
+        let view = Marker()
+        view.identifier = NSUserInterfaceItemIdentifier("muster-e2e-" + identifier)
+        view.setAccessibilityElement(false)
+        return view
+    }
+    func updateNSView(_ view: Marker, context: Context) {}
+}
+
 private struct SettingsView: View {
     @ObservedObject private var keys = Hotkeys.shared
+    @ObservedObject private var remotes = RemoteSessions.shared
+    @State private var newHost = ""
+    @State private var hostError: String?
     @State private var launch = Settings.launchAtLogin
     @State private var needsYou = Settings.notifyNeedsYou
     @State private var done = Settings.notifyDone
@@ -102,7 +152,46 @@ private struct SettingsView: View {
                     }
                 }
             } header: {
-                Text("Watch")
+                Text("This Mac")
+            }
+            Section {
+                ForEach(remotes.hosts) { host in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(host.name)
+                            Text(host.enabled ? (remotes.states[host.name] ?? "Connecting…") : "Not watched")
+                                .font(.caption).foregroundStyle(remotes.issues.contains(host.name) ? Color.orange : Color.secondary)
+                        }
+                        Spacer()
+                        if host.enabled && remotes.issues.contains(host.name) {
+                            Button("Retry") { remotes.retry(host.name) }
+                                .accessibilityLabel("Retry SSH connection to \(host.name)")
+                        }
+                        Toggle("Watch \(host.name)", isOn: Binding(get: { remotes.hosts.first { $0.name == host.name }?.enabled ?? false },
+                                             set: { remotes.setEnabled(host.name, $0) }))
+                            .labelsHidden()
+                            .accessibilityIdentifier("ssh-host-" + host.name)
+                            .background {
+                                if E2E.on { SettingsControlMarker(identifier: "ssh-host-" + host.name) }
+                            }
+                    }
+                }
+                if remotes.hosts.isEmpty {
+                    Text("Add a host from your SSH config, or enter user@hostname.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                HStack {
+                    TextField("SSH host", text: $newHost).onSubmit(addHost)
+                        .accessibilityLabel("SSH host to monitor")
+                    Button("Add", action: addHost)
+                        .disabled(!SSHHost.valid(newHost.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+                if let hostError { Text(hostError).font(.callout).foregroundStyle(.orange) }
+            } header: {
+                Text("Remote sessions")
+            } footer: {
+                Text("Uses your existing SSH access. Only enabled hosts are contacted. Answer remote requests in the agent.")
+                    .foregroundStyle(.secondary)
             }
             Section {
                 ForEach([Agent.claude, Agent.codex], id: \.self) { agent in
@@ -217,8 +306,13 @@ private struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .onAppear(perform: refresh)
+        .onAppear { remotes.discover(); refresh() }
         .onReceive(tick) { _ in refresh() }
+    }
+
+    private func addHost() {
+        if remotes.add(newHost) { newHost = ""; hostError = nil }
+        else { hostError = "Enter an SSH alias or user@hostname, without spaces or options. Up to 32 hosts can be saved." }
     }
 
     private func refresh() {

@@ -222,8 +222,13 @@ struct Session: Equatable {
     var asking: String?      // a question the agent asked that only its own app can answer
     var fault: Fault?        // why it stopped, while status is .error or .blocked
     var lastActivity: Date?  // a heartbeat, separate from the status change used to resolve prompts
+    var remoteHost: String?
+    var remoteOffline = false
 
-    var id: String { "\(agent.rawValue):\(sid)" }
+    var id: String {
+        let local = "\(agent.rawValue):\(sid)"
+        return remoteHost.map { "ssh:\($0.utf8.count):\($0):\(local)" } ?? local
+    }
 
     var stateLabel: String { fault?.label ?? status.label }
 
@@ -239,7 +244,11 @@ struct Session: Equatable {
         return agent.name
     }
 
-    var projectName: String { project.isEmpty ? "" : (project as NSString).lastPathComponent }
+    var projectName: String {
+        let name = project.isEmpty ? "" : (project as NSString).lastPathComponent
+        guard let host = remoteHost else { return name }
+        return [name, host + (remoteOffline ? " (offline)" : "")].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
 
     /// Totals and the API-rate cost for usage broken down by model.
     mutating func account(_ byModel: [String: Usage]) {

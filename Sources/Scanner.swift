@@ -1379,7 +1379,7 @@ final class ClaudeReader {
 
 final class CodexReader {
     private static let eventKeys = ["token_count", "task_started", "task_complete", "turn_aborted", "turn_context",
-                                    "request_user_input_async", "send_user_message_question_reply"].map { Array($0.utf8) }
+                                    "request_user_input", "function_call_output", "send_user_message_question_reply"].map { Array($0.utf8) }
 
     /// A rollout's state, kept current from the lines appended since the last scan.
     private struct Rollout {
@@ -1389,9 +1389,9 @@ final class CodexReader {
         var activity = Date.distantPast
         var model: String?
         var totals: [String: Any]?   // the newest running total_token_usage
-        /// A question Codex asked in its latest turn (request_user_input_async) that has no
-        /// reply yet. No hook covers these, so this is how Muster knows Codex is asking.
-        var question: (id: String, text: String, at: Date)?
+        /// Async questions can outlive the turn that asked them. Keep each unanswered call
+        /// so answering a newer question cannot hide an older one.
+        var questions: [String: (text: String, at: Date)] = [:]
 
         var result: (Status, Date, [String: Usage], String?)? {
             guard let status else { return nil }
@@ -1404,7 +1404,7 @@ final class CodexReader {
                 usage[model ?? "unknown"] = Usage(input: max(0, n("input_tokens") - cached - write), cacheWrite5m: write, cacheWrite1h: 0,
                                                   cacheRead: cached, output: n("output_tokens"))
             }
-            if let question { return (.needsYou, max(question.at, status.1), usage, question.text) }
+            if let question = questions.values.max(by: { $0.at < $1.at }) { return (.needsYou, max(question.at, status.1), usage, question.text) }
             return (status.0, status.1, usage, nil)
         }
     }
@@ -1433,24 +1433,22 @@ final class CodexReader {
         guard fd >= 0 else { return }
         defer { close(fd) }
         var next = r
-        var haveStatus = false, haveTotals = false, haveModel = false, haveQuestion = false
+        var haveStatus = false, haveTotals = false, haveModel = false
         var replied: Set<String> = []   // call ids answered later in the file
         next.offset = LineReader.reverse(fd, from: r.offset, to: f.size) { line in
             guard Bytes.has(line, eventKeys), let d = decode(line) else { return true }
             let p = d["payload"] as? [String: Any]
-            if !haveQuestion {
-                // Newest first: a reply names the questions it answers; the newest question
-                // decides; reaching the start of the turn means it asked nothing.
-                if p?["type"] as? String == "message", let text = Self.text(p), text.contains("send_user_message_question_reply") {
-                    replied.formUnion(Self.callIDs(text))
-                } else if p?["type"] as? String == "function_call", p?["name"] as? String == "request_user_input_async" {
-                    let id = p?["call_id"] as? String ?? ""
-                    next.question = replied.contains(id) ? nil : (id, Self.question(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
-                    haveQuestion = true
-                } else if p?["type"] as? String == "task_started" {
-                    next.question = nil
-                    haveQuestion = true
-                }
+            if p?["type"] as? String == "message", let text = Self.text(p), text.contains("send_user_message_question_reply") {
+                replied.formUnion(Self.callIDs(text))
+            } else if p?["type"] as? String == "function_call_output", let id = p?["call_id"] as? String {
+                let output = (p?["output"] as? String).flatMap { $0.data(using: .utf8) }
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+                if output?["accepted"] as? Bool != true { replied.insert(id) }
+            } else if p?["type"] as? String == "function_call",
+                      let name = (p?["name"] as? String)?.split(separator: ".").last,
+                      name == "request_user_input_async" || name == "request_user_input",
+                      let id = p?["call_id"] as? String, !replied.contains(id) {
+                next.questions[id] = (Self.question(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
             }
             if !haveModel, d["type"] as? String == "turn_context", let m = p?["model"] as? String {
                 next.model = m
@@ -1470,10 +1468,10 @@ final class CodexReader {
             default:
                 break
             }
-            return !(haveStatus && haveTotals && haveModel && haveQuestion)
+            return true
         }
         // A reply appended later answers a question read on an earlier scan.
-        if let q = next.question, replied.contains(q.id) { next.question = nil }
+        for id in replied { next.questions[id] = nil }
         r = next
     }
 

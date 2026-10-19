@@ -148,7 +148,7 @@ final class Deck: NSObject, NSTextFieldDelegate, NSWindowDelegate {
         shown = Store.shared.sessions.filter { s in
             (agent == nil || s.agent == agent) && (query.isEmpty
                 || s.displayTitle.lowercased().contains(query) || s.project.lowercased().contains(query)
-                || s.agent.name.lowercased().contains(query))
+                || s.agent.name.lowercased().contains(query) || s.remoteHost?.lowercased().contains(query) == true)
         }
         let index = shown.firstIndex { $0.id == selectedID } ?? 0
         layout()

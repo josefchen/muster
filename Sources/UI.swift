@@ -212,7 +212,8 @@ final class SessionRow: Flipped {
                 detail.attributedStringValue = NSAttributedString(string: "")
             let when = s.fault?.resets.map { "resets \($0)" } ?? age(s.since, now: now)
             if let q = s.asking, s.status == .needsYou {
-                set(detail, "Asks: " + q)
+                let host = s.remoteHost.map { $0 + (s.remoteOffline ? " (offline)" : "") + "  ·  " } ?? ""
+                set(detail, host + "Asks: " + q)
                 detail.textColor = .labelColor
             } else {
                 set(detail, [s.agent.name, s.projectName, when].filter { !$0.isEmpty }.joined(separator: "  ·  "))

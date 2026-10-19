@@ -141,6 +141,23 @@ append(root + askRollout, json(["type": "response_item", "payload": ["type": "me
     ["type": "input_text", "text": "<send_user_message_question_reply>\n[{\"questionItemId\":\"[\\\"request_user_input_async\\\",\\\"call_q1\\\"]\"}]"]]]]) + "\n")
 let answeredAsk = askReader.scan(now: now).first
 check(answeredAsk?.status == .done && answeredAsk?.asking == nil, "…and once you reply in Codex, it no longer asks")
+func codexQuestion(_ id: String, _ name: String, _ title: String) -> String {
+    json(["type": "response_item", "timestamp": iso(now), "payload": ["type": "function_call", "name": name,
+         "call_id": id, "arguments": json(["questions": [["question": title]]])]]) + "\n"
+}
+append(root + askRollout, codexQuestion("call_sync", "functions.request_user_input", "Choose a region"))
+check(askReader.scan(now: now).first?.asking == "Choose a region", "namespaced synchronous Codex questions also appear")
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "function_call_output", "call_id": "call_sync", "output": "{\"answers\":{}}"]]) + "\n")
+check(askReader.scan(now: now).first?.asking == nil, "a synchronous answer clears its question")
+append(root + askRollout, codexQuestion("call_older", "functions.request_user_input_async", "Still waiting"))
+append(root + askRollout, json(["type": "event_msg", "timestamp": iso(now), "payload": ["type": "task_started"]]) + "\n")
+check(askReader.scan(now: now).first?.asking == "Still waiting", "starting a new turn keeps an unanswered async question")
+check(CodexReader(home: root + "/ask").scan(now: now).first?.asking == "Still waiting", "restarting Muster also recovers a question from an earlier turn")
+append(root + askRollout, codexQuestion("call_newer", "request_user_input_async", "Second question"))
+_ = askReader.scan(now: now)
+append(root + askRollout, json(["type": "response_item", "payload": ["type": "message", "role": "user", "content": [
+    ["type": "input_text", "text": "<send_user_message_question_reply> call_newer"]]]]) + "\n")
+check(askReader.scan(now: now).first?.asking == "Still waiting", "answering a newer question does not hide an older pending question")
 
 write("/long-turn/.codex/sessions/rollout.jsonl", [
     json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-1800)), "payload": ["type": "task_started"]]),
@@ -1044,6 +1061,53 @@ try! fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stalled)
 let beforeReviewTimeout = Date()
 let stalledResult = CodexHookReview.read(executable: stalled, hookPath: reviewPath, command: reviewCommand, home: root, timeout: 0.1)
 check(stalledResult == .unavailable && Date().timeIntervalSince(beforeReviewTimeout) < 1, "a stalled status client is killed and reaped within its deadline")
+
+print("SSH sessions")
+check(["vml", "simpc3", "mac-workstation", "josef@devbox", "2001:db8::1"].allSatisfy(SSHHost.valid), "SSH hosts accept aliases, users and IPv6 addresses")
+check(SSHHost(name: "josef@devbox").codexHostID == "remote-ssh-discovered:josef%40devbox", "Codex host routing encodes user and hostname destinations")
+check(["", "-oProxyCommand=sh", "user@-bad", "@host", "host;touch /tmp/x", "host\nother", "host name", "a@b@c"].allSatisfy { !SSHHost.valid($0) }, "SSH hosts reject options, shell syntax and ambiguous destinations")
+write("/ssh/.ssh/config", "Include extra-*\n#Host do-not-connect\nHost vml VML *.internal !excluded # ignored-alias\n  HostName devbox\nHost mac-workstation\n")
+write("/ssh/.ssh/extra-hosts", "Host simpc3\nInclude config\n")
+check(SSHHost.discover(home: root + "/ssh") == ["mac-workstation", "simpc3", "vml"], "SSH discovery follows includes, handles cycles and skips wildcard and duplicate aliases")
+let remoteFrameData = try! JSONSerialization.data(withJSONObject: ["protocol": 1, "hostname": "devbox", "user": "maker", "errors": [], "limited": false,
+    "sessions": [["agent": "codex", "sid": "shared", "status": "needsYou", "since": now.timeIntervalSince1970,
+                  "title": "Remote task", "project": "/work/lexer", "asking": "Which store?"]]])
+let remoteFrame = SSHFrame.decode(remoteFrameData)
+let remoteSession = remoteFrame?.sessions.first?.session(host: "vml")
+var localSession = remoteSession!
+localSession.remoteHost = nil
+check(remoteSession?.id != localSession.id && remoteSession?.projectName.contains("vml") == true,
+      "a remote session has its own identity and shows its host beside the project")
+check(remoteSession?.asking == "Which store?" && remoteSession?.status == .needsYou, "remote questions keep their waiting state and text")
+check(SSHFrame.decode(Data(#"{"protocol":2}"#.utf8)) == nil && SSHFrame.decode(Data(repeating: 0x20, count: (4 << 20) + 1)) == nil,
+      "unknown or oversized SSH summaries are rejected")
+let quotedScript = "print('private sample')\n"
+check(SSHStream.command(quotedScript).contains("'\\''") && SSHStream.command(quotedScript).hasPrefix("python3 -u -c '"),
+      "the remote helper is shell-quoted as one constant Python command")
+let fakeSSH = root + "/fake-ssh"
+let argumentsFile = root + "/ssh-arguments"
+let pidFile = root + "/ssh-pid"
+try! ("#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argumentsFile + "'\nprintf '%s\\n' \"$$\" > '" + pidFile
+      + "'\nprintf '%s\\n' '" + String(decoding: remoteFrameData, as: UTF8.self) + "'\nexec /bin/cat >/dev/null\n")
+    .write(toFile: fakeSSH, atomically: true, encoding: .utf8)
+chmod(fakeSSH, 0o700)
+var sshFrameReceived = false
+var sshTransport: SSHStream? = SSHStream()
+sshTransport?.onFrame = { sshFrameReceived = $0.sessions.first?.sid == "shared" }
+sshTransport?.start(host: "vml", script: quotedScript, executable: fakeSSH)
+func pump(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
+    let deadline = Date().addingTimeInterval(timeout)
+    while !condition(), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.01)) }
+    return condition()
+}
+check(pump({ sshFrameReceived }), "an SSH stream delivers a complete summary on the main thread")
+let sshArguments = (try? String(contentsOfFile: argumentsFile, encoding: .utf8)) ?? ""
+check(sshArguments.contains("BatchMode=yes") && sshArguments.contains("ForwardAgent=no") && sshArguments.contains("ClearAllForwardings=yes")
+      && sshArguments.contains("--\nvml\n"), "SSH uses existing access without interactive prompts or forwarding")
+let sshPID = Int32(((try? String(contentsOfFile: pidFile, encoding: .utf8)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0
+sshTransport?.stop()
+sshTransport = nil
+check(sshPID > 1 && pump({ kill(sshPID, 0) != 0 }), "disabling a host ends its SSH process even when the stream's owner releases it")
 
 try? fm.removeItem(atPath: root)
 print(failures == 0 ? "\nAll tests passed." : "\n\(failures) failed.")
