@@ -9,6 +9,7 @@ swiftc -O -swift-version 5 -target "$(uname -m)-apple-macos14" -o "$APP/Contents
 cp "$HERE/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$HERE/Resources/AppIcon.icns" "$HERE/Resources/intro.mp4" "$HERE/CHANGELOG.md" "$APP/Contents/Resources/"
 cp "$HERE/Resources/remote_sessions.py" "$APP/Contents/Resources/"
+cp "$HERE/Resources/remote_approvals.py" "$APP/Contents/Resources/"
 codesign --force --sign - "$APP" >/dev/null
 
 pkill -x Muster 2>/dev/null || true

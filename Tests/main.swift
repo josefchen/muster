@@ -1100,13 +1100,29 @@ check(SSHStream.command(quotedScript).contains("'\\''") && SSHStream.command(quo
 let fakeSSH = root + "/fake-ssh"
 let argumentsFile = root + "/ssh-arguments"
 let pidFile = root + "/ssh-pid"
+let answerFile = root + "/ssh-answer"
+let remoteRequestID = UUID().uuidString.lowercased()
+let approvalData = try! JSONSerialization.data(withJSONObject: ["protocol": 1, "event": "prompt", "requestID": remoteRequestID,
+    "path": "/codex/permission", "input": ["session_id": "shared", "tool_name": "Bash", "tool_input": ["command": "printf check"]]])
+check({ if case .prompt(let p)? = SSHMessage.decode(approvalData) { return p.id == remoteRequestID }; return false }(),
+      "SSH approval events preserve the request identifier and validated route")
+check(SSHMessage.decode(Data(#"{"protocol":1,"event":"prompt","requestID":"invalid","path":"/codex/permission","input":{}}"#.utf8)) == nil,
+      "an invalid approval identifier is rejected")
+check(SSHMessage.decode(Data(("{\"protocol\":1,\"event\":\"prompt\",\"requestID\":\"" + remoteRequestID + "\",\"path\":\"/unknown\",\"input\":{}}").utf8)) == nil,
+      "a remote event cannot choose an arbitrary hook route")
+check(SSHStream.command(quotedScript, controller: remoteRequestID).hasSuffix(" --controller " + remoteRequestID)
+      && SSHStream.command(quotedScript, controller: "bad;command") == SSHStream.command(quotedScript),
+      "only a UUID can become the remote controller argument")
 try! ("#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + argumentsFile + "'\nprintf '%s\\n' \"$$\" > '" + pidFile
-      + "'\nprintf '%s\\n' '" + String(decoding: remoteFrameData, as: UTF8.self) + "'\nexec /bin/cat >/dev/null\n")
+      + "'\nprintf '%s\\n' '" + String(decoding: remoteFrameData, as: UTF8.self)
+      + "'\nprintf '%s\\n' '" + String(decoding: approvalData, as: UTF8.self)
+      + "'\nIFS= read -r answer\nprintf '%s' \"$answer\" > '" + answerFile + "'\nexec /bin/cat >/dev/null\n")
     .write(toFile: fakeSSH, atomically: true, encoding: .utf8)
 chmod(fakeSSH, 0o700)
 var sshFrameReceived = false
 var sshTransport: SSHStream? = SSHStream()
 sshTransport?.onFrame = { sshFrameReceived = $0.sessions.first?.sid == "shared" }
+sshTransport?.onPrompt = { request in sshTransport?.answer(request.id, body: Data(#"{"decision":"deny"}"#.utf8)) }
 sshTransport?.start(host: "vml", script: quotedScript, executable: fakeSSH)
 func pump(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
@@ -1114,6 +1130,14 @@ func pump(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
     return condition()
 }
 check(pump({ sshFrameReceived }), "an SSH stream delivers a complete summary on the main thread")
+func sshReply() -> [String: Any]? {
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: answerFile)) else { return nil }
+    return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+check(pump({ sshReply()?["requestID"] as? String == remoteRequestID }), "an approval answer travels back over the existing SSH stdin pipe")
+let sshAnswer = sshReply()
+check(sshAnswer?["requestID"] as? String == remoteRequestID && (sshAnswer?["body"] as? [String: Any])?["decision"] as? String == "deny",
+      "a pipe answer keeps the correct request identifier and decision")
 let sshArguments = (try? String(contentsOfFile: argumentsFile, encoding: .utf8)) ?? ""
 check(sshArguments.contains("BatchMode=yes") && sshArguments.contains("ForwardAgent=no") && sshArguments.contains("ClearAllForwardings=yes")
       && sshArguments.contains("--\nvml\n"), "SSH uses existing access without interactive prompts or forwarding")

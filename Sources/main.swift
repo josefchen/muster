@@ -265,6 +265,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             guard let p = Prompts.shared.pending[id], Settings.notifyNeedsYou, !Attention.enabled else { continue }
             let c = UNMutableNotificationContent()
             c.title = "\(p.agent.name) · \(p.headline)"
+            c.subtitle = p.remoteHost ?? ""
             c.body = p.detail
             c.sound = .default
             c.userInfo = ["prompt": id.uuidString]

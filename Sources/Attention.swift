@@ -90,7 +90,10 @@ final class Attention {
         if first.remoteHost == nil, prompt == nil, first.asking == nil, first.agent != .cursor, answering(first.agent) {
             hints.append(KeyHint([], "Approval missing here? Check the connection in Settings"))
         }
-        if let host = first.remoteHost { hints.append(KeyHint([], first.remoteOffline ? "\(host) offline · Last known request" : "Answer on \(host)")) }
+        if let host = first.remoteHost {
+            hints.append(KeyHint([], first.remoteOffline ? "\(host) offline · Last known request"
+                                 : prompt == nil ? "Answer on \(host)" : "Connected to \(host)"))
+        }
         let dark = surface.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         if hints != shownHints?.0 || dark != shownHints?.1 {
             shownHints = (hints, dark)

@@ -190,7 +190,7 @@ private struct SettingsView: View {
             } header: {
                 Text("Remote sessions")
             } footer: {
-                Text("Uses your existing SSH access. Only enabled hosts are contacted. Answer remote requests in the agent.")
+                Text("Only enabled hosts are contacted. Optional approval hooks let you answer remote tool requests here.")
                     .foregroundStyle(.secondary)
             }
             Section {

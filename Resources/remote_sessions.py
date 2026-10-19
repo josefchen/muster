@@ -12,6 +12,7 @@ import socket
 import sqlite3
 import sys
 import time
+import threading
 
 WINDOW = 3 * 3600
 TAIL = 1 << 20
@@ -360,17 +361,63 @@ class Reader:
 
 def main():
     reader = Reader()
+    controller = sys.argv[sys.argv.index("--controller") + 1] if "--controller" in sys.argv else None
+    bridge_type = globals().get("ApprovalBridge")
+    bridge = None
+    output_lock = threading.Lock()
+    stopped = threading.Event()
+    last_contact = [time.monotonic()]
+    def emit(frame):
+        with output_lock:
+            print(json.dumps(frame, separators=(",", ":"), ensure_ascii=True), flush=True)
+    def controls():
+        while not stopped.is_set():
+            line = sys.stdin.buffer.readline((1 << 20) + 1)
+            if not line or len(line) > 1 << 20:
+                stopped.set()
+                return
+            try:
+                message = json.loads(line)
+                if message.get("event") in ("ping", "answer"):
+                    last_contact[0] = time.monotonic()
+                    if bridge:
+                        bridge.touch()
+                if bridge and message.get("event") == "answer":
+                    bridge.answer(message.get("requestID"), message.get("body"))
+            except (ValueError, TypeError, AttributeError):
+                continue
+    if "--once" not in sys.argv:
+        threading.Thread(target=controls, daemon=True).start()
     previous, last_sent = None, 0
-    while True:
-        frame = reader.scan()
-        body = json.dumps(frame, separators=(",", ":"), ensure_ascii=True)
-        if body != previous or time.monotonic() - last_sent >= 15:
-            print(body, flush=True)
-            previous, last_sent = body, time.monotonic()
-        if "--once" in sys.argv:
-            return
-        if select.select([sys.stdin], [], [], 3)[0] and not os.read(sys.stdin.fileno(), 1):
-            return
+    try:
+        while True:
+            bridge_error = None
+            if controller and bridge_type:
+                if bridge and (not bridge.enabled or bridge.stop.is_set()):
+                    bridge.close()
+                    bridge = None
+                if bridge is None:
+                    candidate = bridge_type(controller, emit)
+                    try:
+                        if candidate.enabled and time.monotonic() - last_contact[0] > 30:
+                            bridge_error = "Approval relay paused; Muster is not responding."
+                        elif candidate.start():
+                            bridge = candidate
+                    except OSError:
+                        bridge_error = "Approval relay unavailable; another Muster may be connected."
+            frame = reader.scan()
+            frame["approvals"] = bridge is not None
+            if bridge_error:
+                frame["errors"].append(bridge_error)
+            body = json.dumps(frame, separators=(",", ":"), ensure_ascii=True)
+            if body != previous or time.monotonic() - last_sent >= 15:
+                emit(frame)
+                previous, last_sent = body, time.monotonic()
+            if "--once" in sys.argv or stopped.wait(3):
+                return
+    finally:
+        if bridge:
+            bridge.close()
 
 
 if __name__ == "__main__":

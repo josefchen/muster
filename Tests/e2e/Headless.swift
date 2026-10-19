@@ -811,8 +811,9 @@ final class Headless {
         app.act("front", ["agent": NSNull()])
         let sid = seeded.codex.sid
         let remoteID = "ssh:3:vml:codex:" + sid
-        func summary(_ status: String = "needsYou", errors: [String] = []) -> [String: Any] {
+        func summary(_ status: String = "needsYou", errors: [String] = [], relay: Bool = false) -> [String: Any] {
             ["protocol": 1, "hostname": "fixture-devbox", "user": "fixture", "errors": errors, "limited": false,
+             "approvals": relay,
              "sessions": [["agent": "codex", "sid": sid, "status": status, "since": Date().timeIntervalSince1970 + 1,
                            "title": "Remote approval workflow", "project": "/work/lexer", "asking": "Which database should the cache use?"]]]
         }
@@ -853,6 +854,68 @@ final class Headless {
         opened("opening a remote Codex session routes to its SSH host", after: beforeOpen,
                url: "codex://threads/\(sid)?hostId=remote-ssh-discovered:vml", sid: sid)
 
+        func request(_ id: String, sessionID: String? = nil, agent: String = "codex") -> [String: Any] {
+            ["protocol": 1, "event": "prompt", "requestID": id, "path": "/\(agent)/permission",
+             "input": ["session_id": sessionID ?? sid, "cwd": "/work/lexer", "tool_name": "Bash",
+                       "tool_input": ["command": "printf remote-check"]]]
+        }
+        func answers(_ id: String) -> [[String: Any]] {
+            ((app.post("/remote-answers", [:])?["answers"] as? [[String: Any]]) ?? [])
+                .filter { $0["requestID"] as? String == id }
+        }
+        app.post("/remote-summary", ["host": "vml", "summary": summary("working", relay: true)])
+        let first = UUID().uuidString, second = UUID().uuidString
+        app.post("/remote-approval", ["host": "vml", "event": request(first)])
+        expect(app, "a remote hook attaches to its host without borrowing the local session") {
+            $0.promptID(remoteID) != nil && $0.promptID(self.seeded.codex.key) == nil
+        }
+        expect(app, "a live remote approval offers an answer and identifies its host") {
+            $0.alertSession == remoteID && $0.alertHints?.contains("Connected to vml") == true && $0.alertHints?.contains("Allow") == true
+        }
+        capture("/alert-capture", "ssh-approval")
+        app.post("/remote-approval", ["host": "vml", "event": request(first)])
+        check(answers(first).isEmpty, "a duplicate SSH event does not release the original request")
+        let secondHostID = "ssh:6:simpc3:codex:" + sid
+        app.post("/remote-approval", ["host": "simpc3", "event": request(second)])
+        let firstPrompt = app.state()?.promptID(remoteID) ?? ""
+        app.post("/answer", ["prompt": firstPrompt, "answer": "deny"])
+        expect(app, "answering one host leaves the other host's matching session pending") {
+            $0.promptID(remoteID) == nil && $0.promptID(secondHostID) != nil
+        }
+        let body = answers(first).last?["body"] as? [String: Any]
+        let hookOutput = body?["hookSpecificOutput"] as? [String: Any]
+        check((hookOutput?["decision"] as? [String: Any])?["behavior"] as? String == "deny",
+              "the remote agent receives the normal denial response")
+        app.post("/remote-cancel", ["host": "vml", "requestID": second])
+        check(app.state()?.promptID(secondHostID) != nil, "a cancellation from one host cannot clear another host")
+        app.post("/remote-cancel", ["host": "simpc3", "requestID": second])
+        expect(app, "a native answer cancels the matching remote request") { $0.promptID(secondHostID) == nil }
+        let orphan = UUID().uuidString, orphanSID = UUID().uuidString
+        let orphanID = "ssh:3:vml:claude:" + orphanSID
+        app.post("/remote-approval", ["host": "vml", "event": request(orphan, sessionID: orphanSID, agent: "claude")])
+        expect(app, "a remote approval appears before its transcript exists") { $0.promptID(orphanID) != nil }
+        app.post("/remote-approval", ["host": "vml", "event": request(UUID().uuidString, sessionID: orphanSID, agent: "claude")])
+        check(app.state()?.sessions.filter { $0["id"] as? String == orphanID }.count == 1,
+              "parallel requests from an unscanned session share one row")
+        let newest = app.state()?.promptID(orphanID) ?? ""
+        app.post("/answer", ["prompt": newest, "answer": "deny"])
+        expect(app, "answering one parallel request exposes the remaining request") {
+            $0.promptID(orphanID) != nil && $0.promptID(orphanID) != newest
+        }
+        app.post("/remote-offline", ["host": "vml"])
+        expect(app, "a disconnected approval remains labelled as cached and cannot be answered") {
+            $0.session(orphanID)?["remoteOffline"] as? Bool == true && $0.promptID(orphanID) == nil
+        }
+        capture("/alert-capture", "ssh-approval-offline")
+        app.post("/remote-summary", ["host": "vml", "summary": summary("working", relay: true)])
+        expect(app, "reconnecting replaces the old cached approval") { $0.session(orphanID) == nil }
+        let handedBack = UUID().uuidString
+        app.post("/remote-approval", ["host": "vml", "event": request(handedBack)])
+        app.post("/open", ["id": remoteID])
+        check((answers(handedBack).last?["body"] as? [String: Any])?.isEmpty == true,
+              "opening a remote session returns its decision to the agent")
+        app.post("/remote-summary", ["host": "vml", "summary": summary(relay: true)])
+
         app.post("/settings-preview", ["width": 460, "dark": false])
         settle()
         let pressed = app.post("/settings-press", ["identifier": "ssh-host-vml"])?["pressed"] as? Bool == true
@@ -861,7 +924,7 @@ final class Headless {
         app.post("/remote-summary", ["host": "vml", "summary": summary()])
         check(app.state()?.session(remoteID) == nil, "late summaries cannot re-enable a disabled host")
         app.post("/remote-enabled", ["host": "vml", "enabled": true])
-        app.post("/remote-summary", ["host": "vml", "summary": summary()])
+        app.post("/remote-summary", ["host": "vml", "summary": summary(relay: true)])
         app.post("/remote-offline", ["host": "simpc3"])
         for (width, dark) in [(460, false), (390, false), (390, true)] {
             app.post("/settings-preview", ["width": width, "dark": dark])

@@ -62,8 +62,9 @@ struct SSHFrame: Decodable {
     let sessions: [Entry]
     let errors: [String]
     let limited: Bool
+    let approvals: Bool?
 
-    enum CodingKeys: String, CodingKey { case version = "protocol", hostname, user, sessions, errors, limited }
+    enum CodingKeys: String, CodingKey { case version = "protocol", hostname, user, sessions, errors, limited, approvals }
 
     struct Entry: Decodable {
         let agent: String
@@ -97,6 +98,30 @@ struct SSHFrame: Decodable {
     }
 }
 
+struct SSHApproval {
+    let id: String
+    let path: String
+    let input: [String: Any]
+}
+
+enum SSHMessage {
+    case summary(SSHFrame), prompt(SSHApproval), cancel(String)
+
+    static func decode(_ data: Data) -> SSHMessage? {
+        guard data.count <= 4 << 20,
+              let d = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              d["protocol"] as? Int == 1 else { return nil }
+        guard let event = d["event"] as? String else { return SSHFrame.decode(data).map(Self.summary) }
+        guard let id = d["requestID"] as? String, UUID(uuidString: id) != nil else { return nil }
+        if event == "cancel" { return .cancel(id) }
+        guard event == "prompt", data.count <= (1 << 20) + 1024,
+              let path = d["path"] as? String,
+              ["/codex/permission", "/claude/permission", "/claude/question"].contains(path),
+              let input = d["input"] as? [String: Any] else { return nil }
+        return .prompt(SSHApproval(id: id, path: path, input: input))
+    }
+}
+
 /// One private SSH process per enabled host. No passwords, agent forwarding,
 /// interactive trust prompts, shared control sockets or transcript files on disk.
 final class SSHStream {
@@ -108,18 +133,23 @@ final class SSHStream {
     private var buffer = Data()
     private var errorBytes = Data()
     var onFrame: ((SSHFrame) -> Void)?
+    var onPrompt: ((SSHApproval) -> Void)?
+    var onCancel: ((String) -> Void)?
     var onExit: ((String) -> Void)?
 
-    static func command(_ script: String) -> String { "python3 -u -c '" + script.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    static func command(_ script: String, controller: String? = nil) -> String {
+        let suffix = controller.flatMap { UUID(uuidString: $0) }.map { " --controller " + $0.uuidString.lowercased() } ?? ""
+        return "python3 -u -c '" + script.replacingOccurrences(of: "'", with: "'\\''") + "'" + suffix
+    }
 
-    func start(host: String, script: String, executable: String = "/usr/bin/ssh") {
+    func start(host: String, script: String, executable: String = "/usr/bin/ssh", controller: String? = nil) {
         queue.async { [weak self] in
             guard let self, self.process == nil, SSHHost.valid(host) else { return }
             let p = Process(), stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
             p.executableURL = URL(fileURLWithPath: executable)
             p.arguments = ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "ServerAliveInterval=10",
                            "-o", "ServerAliveCountMax=2", "-o", "ForwardAgent=no", "-o", "ClearAllForwardings=yes",
-                           "-o", "ControlMaster=no", "-o", "ControlPath=none", "--", host, Self.command(script)]
+                           "-o", "ControlMaster=no", "-o", "ControlPath=none", "--", host, Self.command(script, controller: controller)]
             p.standardInput = stdin
             p.standardOutput = stdout
             p.standardError = stderr
@@ -135,8 +165,14 @@ final class SSHStream {
                     while let end = self.buffer.firstIndex(of: 10) {
                         let line = Data(self.buffer[..<end])
                         self.buffer.removeSubrange(...end)
-                        guard let frame = SSHFrame.decode(line) else { self.fail(p, "The remote helper returned an unreadable summary."); return }
-                        DispatchQueue.main.async { [weak self] in self?.onFrame?(frame) }
+                        guard let message = SSHMessage.decode(line) else { self.fail(p, "The remote helper returned an unreadable summary."); return }
+                        DispatchQueue.main.async { [weak self] in
+                            switch message {
+                            case .summary(let frame): self?.onFrame?(frame)
+                            case .prompt(let prompt): self?.onPrompt?(prompt)
+                            case .cancel(let id): self?.onCancel?(id)
+                            }
+                        }
                     }
                 }
             }
@@ -160,8 +196,31 @@ final class SSHStream {
                     DispatchQueue.main.async { [weak self] in self?.onExit?(reason) }
                 }
             }
+            guard fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) == 0 else {
+                self.clear()
+                DispatchQueue.main.async { [weak self] in self?.onExit?("Couldn't start SSH.") }
+                return
+            }
             do { try p.run() }
             catch { self.clear(); DispatchQueue.main.async { [weak self] in self?.onExit?("Couldn't start SSH.") } }
+        }
+    }
+
+    func answer(_ id: String, body: Data) {
+        guard UUID(uuidString: id) != nil,
+              let object = body.isEmpty ? [:] : (try? JSONSerialization.jsonObject(with: body)) as? [String: Any],
+              let data = try? JSONSerialization.data(withJSONObject: ["event": "answer", "requestID": id, "body": object]),
+              data.count <= 1 << 20 else { return }
+        send(data + Data([10]))
+    }
+
+    func heartbeat() { send(Data("{\"event\":\"ping\"}\n".utf8)) }
+
+    private func send(_ data: Data) {
+        queue.async { [weak self] in
+            guard let self, let p = self.process, p.isRunning, let input = self.input else { return }
+            do { try input.fileHandleForWriting.write(contentsOf: data) }
+            catch { self.fail(p, "SSH disconnected. Retrying…") }
         }
     }
 
