@@ -26,6 +26,7 @@ struct Prompt {
     let blocksNative: Bool
     /// The rest of what the agent sent, for the alert's details (⌥↓).
     var context = Context()
+    var remoteHost: String?
 
     struct Context {
         var reason = ""                 // the agent's own one-line explanation, when it gives one
@@ -78,6 +79,7 @@ final class Prompts {
     private var deliveries: [UUID: (Data, @escaping (Bool) -> Void) -> Void] = [:]
     private var raw: [UUID: [String: Any]] = [:]
     private var guided: Set<UUID> = []
+    private var remoteRequests: [UUID: String] = [:]
     private let server = HookServer(ports: Prompts.ports)
     var onChange: (() -> Void)?
 
@@ -114,8 +116,27 @@ final class Prompts {
     }
 
     func prompt(for s: Session) -> Prompt? {
-        guard s.remoteHost == nil else { return nil }
-        return pending.values.filter { $0.agent == s.agent && $0.sessionID == s.sid }.max { $0.created < $1.created }
+        return pending.values.filter { $0.agent == s.agent && $0.sessionID == s.sid && $0.remoteHost == s.remoteHost }
+            .max { $0.created < $1.created }
+    }
+
+    /// The SSH stream supplies the host; a remote payload cannot choose another
+    /// host or attach its approval to a local session with the same identifier.
+    func receiveRemote(_ request: SSHApproval, host: String, reply: @escaping (Data) -> Void) {
+        guard SSHHost.valid(host), let sid = request.input["session_id"] as? String, sid.utf8.count <= 256,
+              var prompt = parse(request.path, request.input) else { reply(Data()); return }
+        guard !pending.values.contains(where: { $0.remoteHost == host && remoteRequests[$0.id] == request.id }) else { return }
+        prompt.remoteHost = host
+        pending[prompt.id] = prompt
+        remoteRequests[prompt.id] = request.id
+        replies[prompt.id] = reply
+        raw[prompt.id] = request.input
+        Store.shared.refreshPrompts()
+    }
+
+    func cancelRemote(_ host: String, request: String? = nil) {
+        for p in pending.values where p.remoteHost == host && (request == nil || remoteRequests[p.id] == request) { drop(p.id) }
+        Store.shared.refreshPrompts()
     }
 
     func start() {
@@ -204,14 +225,14 @@ final class Prompts {
     func resolve(with sessions: [Session]) {
         HookSetup.shared.progressed(sessions)
         for p in pending.values {
-            guard let s = sessions.first(where: { $0.agent == p.agent && $0.sid == p.sessionID }) else { continue }
+            guard p.remoteHost == nil, let s = sessions.first(where: { $0.agent == p.agent && $0.sid == p.sessionID }) else { continue }
             if s.since > p.created.addingTimeInterval(1), s.status != .needsYou { release(p.id) }
         }
     }
 
     private func releaseIfWatched() {
         guard let front = NSWorkspace.shared.frontmostApplication else { return }
-        for p in pending.values where p.blocksNative && isHost(front, of: p)
+        for p in pending.values where p.remoteHost == nil && p.blocksNative && isHost(front, of: p)
             && !(guided.contains(p.id) && HookSetup.shared.isGuidedCheck(p.agent)) { release(p.id) }
         Store.shared.refreshPrompts()
     }
@@ -235,6 +256,7 @@ final class Prompts {
         raw[id] = nil
         deliveries[id] = nil
         guided.remove(id)
+        remoteRequests[id] = nil
         onChange?()
     }
 

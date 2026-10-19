@@ -164,7 +164,13 @@ Everything is opened read-only. File system events trigger a rescan, at most onc
 
 The remote reader runs in memory and polls every three seconds. It reads recent Codex, Claude Code and Cursor data, then sends titles, project paths, status and question previews over encrypted SSH. Summaries stay in memory on the Mac. If a connection drops, the last summaries are marked offline while Muster reconnects. Search by host name to find its sessions.
 
-Answer remote questions and permissions in the agent on that host. Codex links include the SSH host; other agents offer an SSH command to copy. Remote monitoring installs no permission hooks, so it can show only requests recorded in the agent's session data. It does not report remote token costs. The session list covers the last three hours, up to 500 sessions per host, and reports read failures or truncation in Settings.
+Recorded questions open in the agent on that host. Codex links include the SSH host; other agents offer an SSH command to copy. Monitoring alone installs no hooks, so it can show only requests recorded in session data. It does not report remote token costs. Recent history covers three hours, up to 500 sessions per host; read failures and truncation appear in Settings.
+
+**Optional remote approvals.** From a source checkout on your Mac, run `python3 scripts/remote-approvals.py enable vml` (replace `vml` with an enabled host). This installs a small Python hook on that host and adds entries to Claude Code's settings and Codex's hooks, preserving other settings and saving original files beside them. Review and trust the Muster PermissionRequest hook in Codex's `/hooks` screen. Recent Claude Code versions [reload hooks when settings change](https://code.claude.com/docs/en/settings#when-edits-take-effect); older clients may need a new session.
+
+Live requests and your answers travel over the same SSH connection. The remote hook uses a private Unix socket; no TCP listener or SSH forwarding is added. Commands and question choices are held in memory while the request waits. If Muster disconnects, the hook returns no decision and the agent asks normally. A 30-second heartbeat timeout also releases requests if the Mac stops responding while SSH remains open. Opening the remote session from Muster hands its waiting request back to the agent. Cursor requests still open in Cursor.
+
+Run `python3 scripts/remote-approvals.py disable vml` to remove this Mac's remote hooks. The installed helper is inert without an enabled relay connection; no background service is installed on the remote host.
 
 </details>
 

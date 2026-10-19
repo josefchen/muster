@@ -145,7 +145,7 @@ final class Store {
                 s.fault = nil
             }
             return s
-        } + orphanPrompts(found)
+        } + orphanPrompts(found + RemoteSessions.shared.sessions)
         next.sort { a, b in a.status != b.status ? a.status < b.status : a.since > b.since }
         guard next != sessions else { return }
         sessions = next
@@ -154,12 +154,19 @@ final class Store {
 
     /// A prompt from a session no scan has seen yet still gets a row.
     private func orphanPrompts(_ found: [Session]) -> [Session] {
-        Prompts.shared.pending.values.filter { p in !found.contains { $0.agent == p.agent && $0.sid == p.sessionID } }.map { p in
+        var result: [String: Session] = [:]
+        for p in Prompts.shared.pending.values {
+            guard !found.contains(where: {
+                $0.agent == p.agent && $0.sid == p.sessionID && $0.remoteHost == p.remoteHost
+            }) else { continue }
             var s = Session(agent: p.agent, sid: p.sessionID, status: .needsYou, since: p.created,
                             title: "", project: p.project, appID: "")
             s.promptID = p.id
-            return s
+            s.remoteHost = p.remoteHost
+            if let previous = result[s.id], previous.since > s.since { continue }
+            result[s.id] = s
         }
+        return Array(result.values)
     }
 
     /// Watches the readers' folders that exist. Each event names a directory whose
@@ -211,6 +218,7 @@ enum Opener {
         Stats.record(.jumped)
         if E2E.on { E2E.opening = s }
         if let host = s.remoteHost {
+            if let id = s.promptID { Prompts.shared.release(id); Store.shared.refreshPrompts() }
             // Codex's host-aware thread links use the SSH alias registered by its host discovery.
             if s.agent == .codex {
                 let hostID = SSHHost(name: host).codexHostID
@@ -218,7 +226,7 @@ enum Opener {
             }
             let alert = NSAlert()
             alert.messageText = "Session on \(host)"
-            alert.informativeText = "Continue this session on its host. Muster monitors remote requests; answers stay in the agent."
+            alert.informativeText = "Continue this session on its host. Any approval waiting in Muster returns to the agent."
             alert.addButton(withTitle: "Copy SSH command")
             alert.addButton(withTitle: "Cancel")
             NSApp.activate(ignoringOtherApps: true)

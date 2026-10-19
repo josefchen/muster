@@ -5,6 +5,14 @@ import Combine
 /// and opt-in switches, never keys, transcripts or SSH configuration contents.
 final class RemoteSessions: ObservableObject {
     static let shared = RemoteSessions()
+    static let controller: String = {
+        if E2E.on || Store.demo { return "00000000-0000-0000-0000-000000000001" }
+        let defaults = UserDefaults.standard
+        if let value = defaults.string(forKey: "ssh.controller"), let id = UUID(uuidString: value) { return id.uuidString.lowercased() }
+        let value = UUID().uuidString.lowercased()
+        defaults.set(value, forKey: "ssh.controller")
+        return value
+    }()
     private static let machineName: String = {
         let capacity = 256
         var name = [CChar](repeating: 0, count: capacity)
@@ -54,6 +62,16 @@ final class RemoteSessions: ObservableObject {
         let timer = Timer(timeInterval: 10, repeats: true) { [weak self] _ in self?.checkConnections() }
         watchdog = timer
         RunLoop.main.add(timer, forMode: .common)
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self else { return }
+            for job in self.reconnects.values { job.cancel() }
+            self.reconnects.removeAll()
+            for name in Array(self.streams.keys) {
+                self.streams.removeValue(forKey: name)?.stop()
+                self.seen[name] = nil
+                self.markOffline(name, reason: "This Mac is sleeping. Reconnecting after wake.")
+            }
+        }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
             for host in self.hosts where host.enabled { self.retry(host.name) }
@@ -87,6 +105,7 @@ final class RemoteSessions: ObservableObject {
             streams.removeValue(forKey: name)?.stop()
             connected.remove(name); issues.remove(name)
             snapshots[name] = nil; seen[name] = nil; states[name] = nil
+            Prompts.shared.cancelRemote(name)
             onChange?()
         }
     }
@@ -94,7 +113,7 @@ final class RemoteSessions: ObservableObject {
     func retry(_ name: String) {
         reconnects.removeValue(forKey: name)?.cancel()
         streams.removeValue(forKey: name)?.stop()
-        connected.remove(name)
+        markOffline(name, reason: "Reconnecting…")
         seen[name] = nil
         delays[name] = nil
         connect(name)
@@ -108,7 +127,9 @@ final class RemoteSessions: ObservableObject {
     private func connect(_ name: String) {
         guard !Store.demo, !E2E.on, hosts.contains(where: { $0.name == name && $0.enabled }), streams[name] == nil else { return }
         guard let url = Bundle.main.url(forResource: "remote_sessions", withExtension: "py"),
-              let script = try? String(contentsOf: url, encoding: .utf8) else {
+              let approvalsURL = Bundle.main.url(forResource: "remote_approvals", withExtension: "py"),
+              let reader = try? String(contentsOf: url, encoding: .utf8),
+              let approvals = try? String(contentsOf: approvalsURL, encoding: .utf8) else {
             states[name] = "This build is missing the remote reader."
             issues.insert(name)
             return
@@ -123,6 +144,16 @@ final class RemoteSessions: ObservableObject {
             self.delays[name] = nil
             self.receive(frame, host: name)
         }
+        stream.onPrompt = { [weak self, weak stream] request in
+            guard let self, let stream, self.streams[name] === stream else { return }
+            self.seen[name] = Date()
+            Prompts.shared.receiveRemote(request, host: name) { [weak stream] body in stream?.answer(request.id, body: body) }
+        }
+        stream.onCancel = { [weak self, weak stream] request in
+            guard let self, let stream, self.streams[name] === stream else { return }
+            self.seen[name] = Date()
+            Prompts.shared.cancelRemote(name, request: request)
+        }
         stream.onExit = { [weak self, weak stream] reason in
             guard let self, let stream, self.streams[name] === stream else { return }
             self.streams[name] = nil
@@ -133,10 +164,11 @@ final class RemoteSessions: ObservableObject {
             self.reconnects[name] = job
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: job)
         }
-        stream.start(host: name, script: script)
+        stream.start(host: name, script: approvals + "\n" + reader, controller: Self.controller)
     }
 
     private func checkConnections() {
+        for stream in streams.values { stream.heartbeat() }
         for (name, last) in seen where streams[name] != nil && Date().timeIntervalSince(last) > 40 { retry(name) }
     }
 
@@ -151,8 +183,9 @@ final class RemoteSessions: ObservableObject {
         } else {
             var ids: Set<String> = []
             snapshots[host] = frame.sessions.compactMap { $0.session(host: host) }.filter { ids.insert($0.id).inserted }
-            let count = snapshots[host]?.count ?? 0
-            states[host] = frame.errors.first ?? (frame.limited ? "Showing the 500 most recent sessions" : "Connected · \(count) session\(count == 1 ? "" : "s")")
+            let count = sessions.filter { $0.remoteHost == host }.count
+            let relay = frame.approvals == true ? " · Approvals on" : ""
+            states[host] = frame.errors.first ?? (frame.limited ? "Showing the 500 most recent sessions" : "Connected · \(count) session\(count == 1 ? "" : "s")\(relay)")
         }
         onChange?()
     }
@@ -161,6 +194,23 @@ final class RemoteSessions: ObservableObject {
         connected.remove(host)
         issues.insert(host)
         states[host] = reason
+        var lastKnown = snapshots[host] ?? []
+        for prompt in Prompts.shared.pending.values where prompt.remoteHost == host {
+            var session = Session(agent: prompt.agent, sid: prompt.sessionID, status: .needsYou, since: prompt.created,
+                                  title: "", project: prompt.project, appID: "")
+            session.remoteHost = host
+            switch prompt.kind {
+            case .permission(_, let summary, _): session.asking = String(("Approve " + summary + "?").prefix(240))
+            case .question(let text, _): session.asking = String(text.prefix(240))
+            case .plan: session.asking = "Approve the plan?"
+            }
+            if let index = lastKnown.firstIndex(where: { $0.id == session.id }) {
+                session.title = lastKnown[index].title
+                lastKnown[index] = session
+            } else { lastKnown.append(session) }
+        }
+        snapshots[host] = lastKnown
+        Prompts.shared.cancelRemote(host)
         onChange?()
     }
 

@@ -31,6 +31,7 @@ enum E2E {
         return true
     }()
     static let ui = on && env["MUSTER_E2E_UI"] == "1"
+    private static var remoteAnswers: [[String: Any]] = []
     /// Panels on screen, key focus and global shortcuts: always, except in headless e2e runs.
     static var showsUI: Bool { !on || ui || capturing }
     private static var capturing = false
@@ -229,6 +230,23 @@ enum E2E {
         case ("POST", "/remote-offline"):
             guard let host = r.body["host"] as? String else { return (400, ["error": "missing host"]) }
             RemoteSessions.shared.previewOffline(host)
+            return (200, ["ok": true])
+        case ("POST", "/remote-approval"):
+            guard let host = r.body["host"] as? String,
+                  RemoteSessions.shared.hosts.contains(where: { $0.name == host && $0.enabled }),
+                  let event = r.body["event"] as? [String: Any],
+                  let data = try? JSONSerialization.data(withJSONObject: event),
+                  case .prompt(let request)? = SSHMessage.decode(data) else { return (400, ["error": "invalid remote approval"]) }
+            Prompts.shared.receiveRemote(request, host: host) { body in
+                remoteAnswers = Array((remoteAnswers + [["host": host, "requestID": request.id,
+                    "body": (try? JSONSerialization.jsonObject(with: body)) ?? [:]]]).suffix(128))
+            }
+            return (200, ["ok": true])
+        case ("POST", "/remote-answers"):
+            return (200, ["answers": remoteAnswers])
+        case ("POST", "/remote-cancel"):
+            guard let host = r.body["host"] as? String, let id = r.body["requestID"] as? String else { return (400, ["error": "missing request"]) }
+            Prompts.shared.cancelRemote(host, request: id)
             return (200, ["ok": true])
         case ("POST", "/remote-enabled"):
             guard let host = r.body["host"] as? String, let enabled = r.body["enabled"] as? Bool else { return (400, ["error": "missing host"]) }
