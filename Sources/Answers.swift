@@ -131,6 +131,7 @@ final class Prompts {
         remoteRequests[prompt.id] = request.id
         replies[prompt.id] = reply
         raw[prompt.id] = request.input
+        onChange?()
         Store.shared.refreshPrompts()
     }
 
