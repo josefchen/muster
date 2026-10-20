@@ -76,6 +76,7 @@ final class Prompts {
 
     private(set) var pending: [UUID: Prompt] = [:]
     private var replies: [UUID: (Data) -> Void] = [:]
+    private var releases: [UUID: () -> Void] = [:]   // local requests: step aside for the agent's own prompt
     private var deliveries: [UUID: (Data, @escaping (Bool) -> Void) -> Void] = [:]
     private var raw: [UUID: [String: Any]] = [:]
     private var guided: Set<UUID> = []
@@ -154,6 +155,7 @@ final class Prompts {
     /// Keeps the port the server got, and points this install's hooks at it.
     /// Another build's hooks, with another token, stay as they are.
     private func adopt(_ number: UInt16) {
+        LocalShare.publish(port: number, token: token)
         guard number != Self.port || UserDefaults.standard.integer(forKey: "hookPort") == 0 else { return }
         Self.port = number
         UserDefaults.standard.set(Int(number), forKey: "hookPort")
@@ -212,7 +214,7 @@ final class Prompts {
 
     /// Step aside without deciding; the agent's own prompt takes over.
     func release(_ id: UUID) {
-        replies[id]?(Data())
+        if let release = releases[id] { release() } else { replies[id]?(Data()) }
         drop(id)
     }
 
@@ -254,6 +256,7 @@ final class Prompts {
     private func drop(_ id: UUID) {
         pending[id] = nil
         replies[id] = nil
+        releases[id] = nil
         raw[id] = nil
         deliveries[id] = nil
         guided.remove(id)
@@ -271,13 +274,14 @@ final class Prompts {
         let checking = HookSetup.shared.isGuidedCheck(prompt.agent)
         if prompt.blocksNative, !checking, let front = NSWorkspace.shared.frontmostApplication, isHost(front, of: prompt) {
             HookSetup.shared.disconnected(prompt)
-            x.reply(Data())
+            x.release()
             return
         }
         pending[prompt.id] = prompt
         if checking { guided.insert(prompt.id) }
         replies[prompt.id] = x.reply
-        deliveries[prompt.id] = x.deliver
+        releases[prompt.id] = x.release
+        deliveries[prompt.id] = { x.deliver($0, completion: $1) }
         raw[prompt.id] = input
         x.onClose { DispatchQueue.main.async { [weak self] in
             HookSetup.shared.disconnected(prompt)
@@ -379,9 +383,37 @@ enum HookInstaller {
         let data = (try? Data(contentsOf: URL(fileURLWithPath: config))) ?? Data()
         return HookVerification.digest(Data(digest.utf8) + data)
     }
-    static func install(_ agent: Agent) throws { try hooks(agent)?.install(); HookSetup.shared.refresh() }
+    /// Where Agent Relay already answers, shares its hook rather than adding a second one:
+    /// two blocking hooks hold the agent until both return.
+    static func install(_ agent: Agent) throws {
+        guard agent != .cursor else { return }
+        if LocalShare.relayHolds(path(agent)) || LocalShare.shared(agent, path(agent)) {
+            guard let script = Bundle.main.url(forResource: "remote_approvals", withExtension: "py") else {
+                throw NSError(domain: "Muster", code: 1, userInfo: [NSLocalizedDescriptionKey: "This copy of Muster is missing its approval helper."])
+            }
+            try LocalShare.enable(python: LocalShare.relayPython([claudeSettings, codexHooks]), script: script,
+                                  port: Prompts.port, token: Prompts.shared.token)
+        } else {
+            try hooks(agent)?.install()
+        }
+        HookSetup.shared.refresh()
+    }
     static func repoint(_ agent: Agent) throws { try hooks(agent)?.repoint(); HookSetup.shared.refresh() }
-    static func uninstall(_ agent: Agent) throws { try hooks(agent)?.uninstall(); HookSetup.shared.refresh() }
+    /// Turning one agent off while sharing gives both back to Relay: the shared hook covers both.
+    static func uninstall(_ agent: Agent) throws {
+        if LocalShare.shared(agent, path(agent)), let script = Bundle.main.url(forResource: "remote_approvals", withExtension: "py") {
+            try LocalShare.disable(python: LocalShare.relayPython([claudeSettings, codexHooks]), script: script)
+        }
+        try hooks(agent)?.uninstall()
+        HookSetup.shared.refresh()
+    }
+    static func path(_ agent: Agent) -> String { agent == .claude ? claudeSettings : codexHooks }
+    /// Agent Relay answers this agent now, without Muster.
+    static func relayAlone(_ agent: Agent) -> Bool { agent != .cursor && LocalShare.relayHolds(path(agent)) && !isInstalled(agent) }
+    static func sharedWithRelay(_ agent: Agent) -> Bool { agent != .cursor && LocalShare.shared(agent, path(agent)) }
+    /// Relay's installer ran again and added its own hook beside the shared one, so the agent
+    /// waits for both. Installing again folds it back in.
+    static func relayAddedBack(_ agent: Agent) -> Bool { sharedWithRelay(agent) && LocalShare.relayHolds(path(agent)) }
 
     static func displayPath(_ agent: Agent) -> String {
         let path = agent == .claude ? claudeSettings : codexHooks

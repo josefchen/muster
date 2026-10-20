@@ -284,10 +284,14 @@ struct Hooks {
         guard !token.isEmpty else { return false }
         return (h["headers"] as? [String: Any])?["X-Muster-Token"] as? String == token
             || (h["command"] as? String)?.contains("X-Muster-Token: \(token)'") == true
+            || LocalShare.isRunner(h, agent)
     }
 
+    /// Calls this install's server. The hook shared with Agent Relay reads the port from a
+    /// file Muster keeps current, so it always does.
     private func calls(_ h: [String: Any]) -> Bool {
         (h["url"] as? String)?.hasPrefix(base + "/") == true || (h["command"] as? String)?.contains(" \(base)/") == true
+            || LocalShare.isRunner(h, agent)
     }
 
     /// Any Muster's handler, this install's or another's.

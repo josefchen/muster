@@ -207,6 +207,16 @@ private struct SettingsView: View {
                                 Text(agent == .claude ? "Claude Code" : "Codex")
                                 Text(agent == .claude ? "Permissions, questions and plans" : "Approvals; also enable the hook in Codex")
                                     .font(.caption).foregroundStyle(.secondary)
+                                if HookInstaller.relayAddedBack(agent) {
+                                    Text("Agent Relay added its own hook again, so the agent waits for both. Turn this off and on to share it again.")
+                                        .font(.caption).foregroundStyle(.orange)
+                                } else if HookInstaller.sharedWithRelay(agent) {
+                                    Text("Shared with Agent Relay: both get each request, and the first answer wins.")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                } else if HookInstaller.relayAlone(agent) {
+                                    Text("Agent Relay answers these now. Turn this on to share them: both get each request, and the first answer wins.")
+                                        .font(.caption).foregroundStyle(.orange)
+                                }
                             }
                         }
                         .accessibilityLabel("Answer \(agent == .claude ? "Claude Code" : agent.name) prompts from Muster")

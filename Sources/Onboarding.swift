@@ -619,7 +619,9 @@ private struct AnswerPage: View {
                     .toggleStyle(.switch).labelsHidden()
                     .accessibilityLabel("Answer \(agent.name) prompts from Muster")
             }
-            Text("Adds one hook to \(HookInstaller.displayPath(agent)) and keeps a backup.")
+            Text(HookInstaller.relayAlone(agent) || HookInstaller.sharedWithRelay(agent)
+                 ? "Shares Agent Relay's hook: both get each request, and the first answer wins."
+                 : "Adds one hook to \(HookInstaller.displayPath(agent)) and keeps a backup.")
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
                 .padding(.leading, 48)
             if on {
