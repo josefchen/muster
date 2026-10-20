@@ -34,7 +34,12 @@ enum Agent: String, CaseIterable {
         if let hit = Agent.icons[self] { return hit }
         let image: NSImage
         if let url = bundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first {
-            image = NSWorkspace.shared.icon(forFile: url.path)
+            // The app's own .icns first: macOS 26 hands out Icon Composer icons lazily, and asked
+            // too early it returns a dashed placeholder that would be kept for good.
+            let bundle = Bundle(url: url)
+            let file = bundle?.object(forInfoDictionaryKey: "CFBundleIconFile") as? String
+            let icns = file.flatMap { bundle?.url(forResource: ($0 as NSString).deletingPathExtension, withExtension: "icns") }
+            image = icns.flatMap(NSImage.init(contentsOf:)) ?? NSWorkspace.shared.icon(forFile: url.path)
         } else {
             image = drawnIcon
         }
