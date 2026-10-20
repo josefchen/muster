@@ -138,7 +138,12 @@ final class Headless {
               "with Relay holding the hooks and Muster's gone, Muster isn't answering")
 
         let r = app.post("/hooks", ["agent": "claude", "install": true])
-        check(r?["installed"] as? Bool == true && r?["error"] == nil, "turning answering on shares Relay's hook rather than adding a second")
+        // Setup runs Relay's Python, whose first launch on a cold Mac can outlast the request.
+        expect(app, "turning answering on shares Relay's hook rather than adding a second", within: 30) { _ in
+            let text = String(decoding: self.fx.read(".claude/settings.json") ?? Data(), as: UTF8.self)
+            return text.contains("Muster/approvals/hook.py") && !text.contains("AgentRelay/connector")
+        }
+        check(r == nil || (r?["installed"] as? Bool == true && r?["error"] == nil), "…without an error")
         let shared = String(decoding: fx.read(".claude/settings.json") ?? Data(), as: UTF8.self)
         let codexShared = String(decoding: fx.read(".codex/hooks.json") ?? Data(), as: UTF8.self)
         check(!shared.contains("AgentRelay/connector") && !codexShared.contains("AgentRelay/connector")
