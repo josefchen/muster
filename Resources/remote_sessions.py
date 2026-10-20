@@ -130,7 +130,8 @@ class Reader:
         # Read metadata once, then only appended bytes. Oversized records are skipped
         # in bounded chunks; a large tool output cannot displace an older question.
         markers = (b"task_started", b"task_complete", b"turn_aborted", b"token_count",
-                   b"request_user_input", b"function_call_output", b"send_user_message_question_reply")
+                   b"request_user_input", b"function_call_output", b"send_user_message_question_reply",
+                   b'"role":"user"', b'"role": "user"')
         try:
             with path.open("rb") as stream:
                 stream.seek(cached["offset"])
@@ -179,6 +180,8 @@ class Reader:
                         questions[call][0].pop(index, None)
                         if not questions[call][0]:
                             questions.pop(call)
+            elif Reader.written(message):
+                questions.clear()   # you wrote to the thread since: the questions before it are behind you
         elif kind == "function_call_output":
             try:
                 output = json.loads(p.get("output", "{}"))
@@ -193,6 +196,15 @@ class Reader:
             pending = {i: str(q.get("title") or q.get("question") or "Codex has a question")[:220] for i, q in enumerate(items)}
             if pending:
                 questions[p["call_id"]] = (pending, at)
+
+    # An unanswered question stops asking after Muster's three-hour window.
+    QUESTION_LIFE = 3 * 3600
+
+    @staticmethod
+    def written(message):
+        """A message you wrote, not context Codex adds as a user message (AGENTS.md and the like)."""
+        stripped = message.strip()
+        return bool(stripped) and not stripped.startswith("<") and not stripped.startswith("# AGENTS.md")
 
     @staticmethod
     def question_replies(message):
@@ -214,8 +226,9 @@ class Reader:
         status = state["status"]
         since, activity = state["since"], state["lastActivity"]
         asking = None
-        if state["questions"]:
-            pending, at = max(state["questions"].values(), key=lambda q: q[1])
+        fresh = [q for q in state["questions"].values() if time.time() - q[1] <= Reader.QUESTION_LIFE]
+        if fresh:
+            pending, at = max(fresh, key=lambda q: q[1])
             asking = pending[min(pending)]
             if len(pending) > 1:
                 asking += " (and " + str(len(pending)-1) + " more)"

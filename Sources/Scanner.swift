@@ -1021,6 +1021,8 @@ final class ClaudeReader {
     static let promptingModes: Set<String> = ["default", "acceptEdits", "plan"]
     static let noPromptTools: Set<String> = ["Read", "Glob", "Grep", "LS", "TodoWrite", "Task", "Agent", "WebSearch", "Monitor"]
     static let waitingTools: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
+    /// Muster's hook delivers Claude's real permission prompts, so a slow tool call is only slow.
+    var promptsByHook = false
 
     struct FileState {
         var status: Status
@@ -1362,8 +1364,9 @@ final class ClaudeReader {
                 o.fail(f, at: e)
             }
             // Permission prompts are never written to disk. In a mode that can prompt,
-            // a tool call left unanswered this long is almost always one.
-            if o.status == .working, Self.promptingModes.contains(a.permissionMode),
+            // a tool call left unanswered this long is usually one. Only a guess: a long build
+            // looks the same, so with the hook delivering the real prompts it isn't made.
+            if !promptsByHook, o.status == .working, Self.promptingModes.contains(a.permissionMode),
                let tools = pending[sid], !tools.isEmpty, !Set(tools).isSubset(of: Self.noPromptTools),
                now.timeIntervalSince(max(o.since, a.activity)) >= Self.permissionWait {
                 o.status = .needsYou
@@ -1379,7 +1382,8 @@ final class ClaudeReader {
 
 final class CodexReader {
     private static let eventKeys = ["token_count", "task_started", "task_complete", "turn_aborted", "turn_context",
-                                    "request_user_input", "function_call_output", "send_user_message_question_reply"].map { Array($0.utf8) }
+                                    "request_user_input", "function_call_output", "send_user_message_question_reply",
+                                    "\"role\":\"user\"", "\"role\": \"user\""].map { Array($0.utf8) }
 
     /// A rollout's state, kept current from the lines appended since the last scan.
     private struct Rollout {
@@ -1393,7 +1397,11 @@ final class CodexReader {
         /// so answering a newer question cannot hide an older one.
         var questions: [String: (texts: [Int: String], at: Date)] = [:]
 
-        var result: (Status, Date, [String: Usage], String?)? {
+        /// How long an unanswered question keeps asking: Muster's three-hour window. Past that,
+        /// or once you've written to the thread since, it's no longer waiting on you.
+        static let questionLife: TimeInterval = recentWindow
+
+        func result(now: Date) -> (Status, Date, [String: Usage], String?)? {
             guard let status else { return nil }
             // token_count carries running totals for the whole thread; the model comes
             // from the latest turn_context. Input includes the cached part.
@@ -1404,7 +1412,8 @@ final class CodexReader {
                 usage[model ?? "unknown"] = Usage(input: max(0, n("input_tokens") - cached - write), cacheWrite5m: write, cacheWrite1h: 0,
                                                   cacheRead: cached, output: n("output_tokens"))
             }
-            if let batch = questions.values.max(by: { $0.at < $1.at }), let index = batch.texts.keys.min(), let first = batch.texts[index] {
+            if let batch = questions.values.filter({ now.timeIntervalSince($0.at) <= Self.questionLife }).max(by: { $0.at < $1.at }),
+               let index = batch.texts.keys.min(), let first = batch.texts[index] {
                 let text = batch.texts.count > 1 ? "\(first) (and \(batch.texts.count - 1) more)" : first
                 return (.needsYou, max(batch.at, status.1), usage, text)
             }
@@ -1439,6 +1448,8 @@ final class CodexReader {
         var haveStatus = false, haveTotals = false, haveModel = false
         var replied: [String: Set<Int>] = [:]
         var completed: Set<String> = []
+        var wrote = false             // you wrote to the thread in these bytes: what came before is behind you
+        var asked: Set<String> = []   // questions read in these bytes after your newest message
         next.offset = LineReader.reverse(fd, from: r.offset, to: f.size) { line in
             guard Bytes.has(line, eventKeys), let d = decode(line) else { return true }
             let p = d["payload"] as? [String: Any]
@@ -1447,6 +1458,9 @@ final class CodexReader {
                     if let index = reply.index { replied[reply.call, default: []].insert(index) }
                     else { completed.insert(reply.call) }
                 }
+            } else if !wrote, p?["type"] as? String == "message", p?["role"] as? String == "user",
+                      let text = Self.text(p), Self.written(text) {
+                wrote = true
             } else if p?["type"] as? String == "function_call_output", let id = p?["call_id"] as? String {
                 let output = (p?["output"] as? String).flatMap { $0.data(using: .utf8) }
                     .flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
@@ -1454,8 +1468,9 @@ final class CodexReader {
             } else if p?["type"] as? String == "function_call",
                       let name = (p?["name"] as? String)?.split(separator: ".").last,
                       name == "request_user_input_async" || name == "request_user_input",
-                      let id = p?["call_id"] as? String, !completed.contains(id) {
+                      let id = p?["call_id"] as? String, !completed.contains(id), !wrote {
                 next.questions[id] = (Self.questionTexts(p?["arguments"] as? String), parseISO(d["timestamp"]) ?? .distantPast)
+                asked.insert(id)
             }
             if !haveModel, d["type"] as? String == "turn_context", let m = p?["model"] as? String {
                 next.model = m
@@ -1479,12 +1494,20 @@ final class CodexReader {
         }
         // A reply appended later answers a question read on an earlier scan.
         for id in completed { next.questions[id] = nil }
+        if wrote { next.questions = next.questions.filter { asked.contains($0.key) } }
         for (id, indices) in replied {
             guard var batch = next.questions[id] else { continue }
             for index in indices { batch.texts[index] = nil }
             next.questions[id] = batch.texts.isEmpty ? nil : batch
         }
         r = next
+    }
+
+    /// A message you wrote, not one Codex adds to the conversation itself (AGENTS.md,
+    /// environment context and the like arrive as user messages too).
+    static func written(_ text: String) -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !t.isEmpty && !t.hasPrefix("<") && !t.hasPrefix("# AGENTS.md")
     }
 
     private static func text(_ p: [String: Any]?) -> String? {
@@ -1521,7 +1544,7 @@ final class CodexReader {
 
     /// A rollout's state. Its path is whatever Codex stored, which needn't match how
     /// FSEvents names it, and there are only a few, so each is stat'd every scan.
-    private func rollout(_ path: String) -> (Status, Date, [String: Usage], String?)? {
+    private func rollout(_ path: String, now: Date) -> (Status, Date, [String: Usage], String?)? {
         var r = rollouts[path] ?? Rollout()
         guard let f = stat(path) else { rollouts[path] = nil; return nil }
         if !f.same(r.info) {
@@ -1530,7 +1553,7 @@ final class CodexReader {
             r.info = f
         }
         rollouts[path] = r
-        return r.result
+        return r.result(now: now)
     }
 
     func scan(now: Date) -> [Session] { scan(now: now, changes: .all) }
@@ -1571,7 +1594,7 @@ final class CodexReader {
         // Rows only leave the window between writes, so the cutoff is applied again here.
         let live = rows.filter { $0.updated > cutoff }
         let found: [Session] = live.compactMap { r in
-            guard let res = rollout(r.path) else { return nil }
+            guard let res = rollout(r.path, now: now) else { return nil }
             var s = Session(agent: .codex, sid: r.id, status: res.0, since: res.1,
                             title: String(r.title.prefix(80)), project: r.cwd, appID: "")
             s.asking = res.3

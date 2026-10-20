@@ -68,6 +68,20 @@ let opusReads: Double = (1000 + 2000) * 0.2
 let expected: Double = (opusInput + opusOutput + opusWrites + opusReads) / 1_000_000
 check(abs((claude["done"]?.cost ?? 0) - expected) < 1e-12, "cost prices 5-minute and 1-hour cache writes separately")
 
+// A tool call that runs a while looks the same on disk as one waiting for permission.
+write("/.claude/projects/-work-atlas/slow.jsonl", json(["type": "assistant", "timestamp": iso(now.addingTimeInterval(-60)), "cwd": "/work/atlas",
+    "message": ["id": "msg_S", "model": "claude-sonnet-5", "stop_reason": "tool_use",
+                "content": [["type": "tool_use", "name": "Bash"]], "usage": ["input_tokens": 1, "output_tokens": 1]]]) + "\n")
+write("/Library/Application Support/Claude/claude-code-sessions/a/b/local_slow.json", json([
+    "cliSessionId": "slow", "sessionId": "local_slow", "title": "Long build", "isArchived": false,
+    "lastActivityAt": now.addingTimeInterval(-60).timeIntervalSince1970 * 1000, "permissionMode": "default"]))
+check(ClaudeReader(home: root).scan(now: now).first { $0.sid == "slow" }?.status == .needsYou,
+      "without Muster's hook, a tool call left a while in a prompting mode is taken for a prompt")
+let hookedReader = ClaudeReader(home: root)
+hookedReader.promptsByHook = true
+check(hookedReader.scan(now: now).first { $0.sid == "slow" }?.status == .working,
+      "with the hook delivering the real prompts, a slow tool call stays working, never needs you")
+
 print("Errors")
 func apiError(_ code: String, _ text: String) -> String {
     json(["type": "assistant", "timestamp": iso(now), "cwd": "/work/atlas", "isApiErrorMessage": true, "error": code,
@@ -171,6 +185,22 @@ check(askReader.scan(now: now).first?.asking == "Second question", "answering on
 check(CodexReader(home: root + "/ask").scan(now: now).first?.asking == "Second question", "a partially answered batch also survives restarting the reader")
 append(root + askRollout, batchReply(1))
 check(askReader.scan(now: now).first?.asking == nil, "answering the last item clears the batch")
+func userMessage(_ text: String) -> String {
+    json(["type": "response_item", "timestamp": iso(now), "payload": ["type": "message", "role": "user",
+         "content": [["type": "input_text", "text": text]]]]) + "\n"
+}
+append(root + askRollout, codexQuestion("call_skip", "request_user_input_async", "Pick a colour"))
+check(askReader.scan(now: now).first?.asking == "Pick a colour", "a new question asks")
+append(root + askRollout, userMessage("# AGENTS.md instructions\n\n<INSTRUCTIONS>Be brief</INSTRUCTIONS>"))
+append(root + askRollout, userMessage("<environment_context>cwd</environment_context>"))
+check(askReader.scan(now: now).first?.asking == "Pick a colour", "context Codex adds as user messages isn't you moving on")
+append(root + askRollout, userMessage("Never mind, use blue"))
+check(askReader.scan(now: now).first?.asking == nil, "once you write to the thread after a question, it no longer asks")
+check(CodexReader(home: root + "/ask").scan(now: now).first?.asking == nil, "…also when the whole file is read again")
+append(root + askRollout, codexQuestion("call_after", "request_user_input_async", "One more thing"))
+check(askReader.scan(now: now).first?.asking == "One more thing", "a question after your message asks again")
+check(askReader.scan(now: now.addingTimeInterval(3 * 3600 + 60)).first?.asking == nil,
+      "an unanswered question more than three hours old no longer asks")
 
 write("/long-turn/.codex/sessions/rollout.jsonl", [
     json(["type": "event_msg", "timestamp": iso(now.addingTimeInterval(-1800)), "payload": ["type": "task_started"]]),

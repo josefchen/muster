@@ -533,7 +533,11 @@ final class Headless {
         let waiting = ClaudeFixture(fx, project: "heuristic")
         waiting.write(waiting.user("Migrate", at: now.addingTimeInterval(-25)), waiting.toolUse("Bash", input: ["command": "rm -rf dist"], at: now.addingTimeInterval(-20)))
         waiting.appRecord(appID: "local_" + UUID().uuidString.lowercased(), title: "Migrate", mode: "default", activity: now.addingTimeInterval(-20))
-        expect(app, "Claude: a tool call unanswered 15 s in a prompting mode reads as needs you") { $0.status(waiting.id) == "needsYou" }
+        // Muster's hook is installed here, so real prompts arrive through it: a tool call that's
+        // merely slow must not raise a false alarm. (Without the hook it's still guessed; see Tests/main.swift.)
+        expect(app, "Claude: with the hook installed, a tool call unanswered 15 s stays working, not needs you") {
+            $0.hooks("claude") && $0.status(waiting.id) == "working"
+        }
         let s = app.state()
         check(s?.status(stale.id) == "idle", "a session working but silent for 20 minutes reads as idle")
         check(s?.status(ancient.id) == nil, "a session that finished over 3 hours ago is dropped")
