@@ -34,8 +34,16 @@ final class HookServer {
             deliver(body) { _ in }
         }
 
-        func deliver(_ body: Data, completion: @escaping (Bool) -> Void) {
-            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n"
+        /// Steps aside because you went to the agent to answer there. The agents read only the
+        /// empty body; a hook Muster shares with another receiver reads the header and lets
+        /// that one go too, so the agent's own prompt can appear.
+        func release() {
+            deliver(Data(), release: true) { _ in }
+        }
+
+        func deliver(_ body: Data, release: Bool = false, completion: @escaping (Bool) -> Void) {
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\n"
+                + (release ? "X-Muster: release\r\n" : "") + "Connection: close\r\n\r\n"
             let c = connection
             c.send(content: Data(head.utf8) + body, completion: .contentProcessed { error in
                 completion(error == nil)

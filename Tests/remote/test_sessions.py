@@ -89,6 +89,28 @@ class RemoteSessionsTest(unittest.TestCase):
                     self.event("message", role="user", content=[{"text": '<send_user_message_question_reply>call_second</send_user_message_question_reply>'}])])
         self.assertEqual(self.reader.scan(self.now)["sessions"][0]["asking"], "Still waiting")
 
+    def test_context_codex_adds_is_not_you_moving_on(self):
+        self.codex([self.question("call_first", "Still waiting"),
+                    self.event("message", role="user", content=[{"text": "# AGENTS.md instructions\n<INSTRUCTIONS>Be brief</INSTRUCTIONS>"}]),
+                    self.event("message", role="user", content=[{"text": "<environment_context>cwd</environment_context>"}])])
+        self.assertEqual(self.reader.scan(self.now)["sessions"][0]["asking"], "Still waiting",
+                         "context Codex adds as user messages isn't you moving on")
+
+    def test_your_own_message_after_a_question_clears_it(self):
+        self.codex([self.event("task_started"), self.question("call_first", "Still waiting"), self.event("task_complete"),
+                    self.event("message", role="user", content=[{"text": "Never mind, use Postgres"}])])
+        session = self.reader.scan(self.now)["sessions"][0]
+        self.assertIsNone(session["asking"])
+        self.assertNotEqual(session["status"], "needsYou")
+
+    def test_question_older_than_three_hours_stops_asking(self):
+        old = self.question("call_old", "Yesterday's question")
+        old["timestamp"] = self.now - 4 * 3600
+        self.codex([self.event("task_started"), old, self.event("task_complete")])
+        session = self.reader.scan(self.now)["sessions"][0]
+        self.assertIsNone(session["asking"])
+        self.assertEqual(session["status"], "done")
+
     def test_sync_question_output_resolves_it(self):
         question = self.question()
         question["payload"]["name"] = "request_user_input"

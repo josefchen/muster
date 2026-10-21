@@ -51,6 +51,26 @@ def peers(agent, event):
         raise ValueError("Too many approval receivers")
     return result
 
+def local_muster(agent, event, raw):
+    """This Mac's Muster, over HTTP on 127.0.0.1. Its port and token live in a private
+    file beside this script, which Muster rewrites when its port moves, so the agent's
+    hook definition never changes."""
+    route = {("claude", "PermissionRequest"): "/claude/permission", ("claude", "PreToolUse"): "/claude/question",
+             ("codex", "PermissionRequest"): "/codex/permission"}.get((agent, event))
+    path = Path(__file__).with_name("muster.json")
+    info = path.lstat()
+    if route is None or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 4096:
+        raise OSError("No local Muster")
+    settings = json.loads(path.read_text())
+    port, token = settings["port"], settings["token"]
+    if not isinstance(port, int) or not 1024 <= port <= 65535 or not isinstance(token, str) or not token.isalnum():
+        raise ValueError("Invalid local Muster settings")
+    conn = socket.create_connection(("127.0.0.1", port), timeout=1)
+    conn.sendall(("POST " + route + " HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n"
+                  "X-Muster-Token: " + token + "\r\nContent-Length: " + str(len(raw)) +
+                  "\r\nConnection: close\r\n\r\n").encode() + raw)
+    return conn
+
 def decision(body, event):
     if not isinstance(body, dict):
         return False
@@ -109,20 +129,25 @@ def main():
         receivers = peers(agent, event)
         hold = 600 if agent == "codex" else 3600
         deadline = time.monotonic() + hold
-        conn = socket.socket(socket.AF_UNIX)
+        conn = None
         try:
-            info = os.lstat(path)
-            if info.st_uid != os.getuid() or not stat.S_ISSOCK(info.st_mode):
-                raise OSError("Invalid approval socket")
-            conn.settimeout(1)
-            conn.connect(path)
-            conn.sendall((json.dumps({"agent": agent, "event": event, "input": body}) + "\n").encode())
+            if path == "local":
+                conn = local_muster(agent, event, raw)
+            else:
+                conn = socket.socket(socket.AF_UNIX)
+                info = os.lstat(path)
+                if info.st_uid != os.getuid() or not stat.S_ISSOCK(info.st_mode):
+                    raise OSError("Invalid approval socket")
+                conn.settimeout(1)
+                conn.connect(path)
+                conn.sendall((json.dumps({"agent": agent, "event": event, "input": body}) + "\n").encode())
             conn.setblocking(False)
-            worker = {"read": conn, "data": bytearray(), "deadline": deadline, "muster": True}
+            worker = {"read": conn, "data": bytearray(), "deadline": deadline, "muster": True, "http": path == "local"}
             workers.append(worker)
             selector.register(conn, selectors.EVENT_READ, (worker, False))
-        except OSError:
-            conn.close()
+        except (OSError, ValueError, KeyError):
+            if conn is not None:
+                conn.close()
         for command, timeout in receivers:
             try:
                 process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -167,7 +192,8 @@ def main():
                     if len(worker["data"]) > LIMIT:
                         close(worker)
                         continue
-                    if chunk and not (worker.get("muster") and b"\n" in worker["data"]):
+                    # The SSH socket sends one line; local HTTP answers then closes.
+                    if chunk and not (worker.get("muster") and not worker.get("http") and b"\n" in worker["data"]):
                         continue
                     if not worker.get("muster"):
                         selector.unregister(key.fileobj)
@@ -175,7 +201,19 @@ def main():
                         worker["read"] = None
                         worker["eof"] = True
                         continue
-                    result = json.loads(worker["data"])
+                    data = bytes(worker["data"])
+                    if worker.get("http"):
+                        head, _, data = data.partition(b"\r\n\r\n")
+                        lines = head.lower().split(b"\r\n")
+                        if lines[0].split(b" ")[1:2] != [b"200"]:
+                            close(worker)
+                            continue
+                        if not data.strip():
+                            if b"x-muster: release" in lines[1:]:
+                                return {}   # you went to the agent: release every copy so its prompt appears
+                            close(worker)   # Muster passes; another receiver can still answer
+                            continue
+                    result = json.loads(data)
                     if worker.get("muster") and result == {"_muster": "native"}:
                         return {}
                     if decision(result, event):
@@ -212,6 +250,18 @@ def relay_paths(controller, home=None, runtime=None):
     # macOS TMPDIR can exceed the Unix socket path limit.
     run = Path(runtime or "/tmp") / ("muster-remote-" + str(os.getuid()) + "-" + name)
     return folder, run
+
+
+def local_folder(home=None):
+    """Where this Mac's shared approval hook lives; Muster writes muster.json here."""
+    return (Path.home() if home is None else Path(home)) / "Library/Application Support/Muster/approvals"
+
+
+def direct_muster(handler):
+    """Muster's own local hook, which the shared hook replaces so Muster isn't asked twice."""
+    return isinstance(handler, dict) and (
+        isinstance(handler.get("headers"), dict) and "X-Muster-Token" in handler["headers"] or
+        "X-Muster-Token" in str(handler.get("command", "")))
 
 
 def private_directory(path):
@@ -266,6 +316,10 @@ def read_peers(folder, home=None):
     return before, settings["entries"]
 
 
+RELAY_CLIENTS = (".local/share/agent-relay/connector/hook-client.py",
+                 "Library/Application Support/AgentRelay/connector/hook-client.py")
+
+
 def relay_handler(handler, home, agent):
     """Recognize only Relay's direct Python client, never arbitrary policy hooks."""
     if not isinstance(handler, dict) or handler.get("type") != "command" or handler.get("async"):
@@ -274,10 +328,10 @@ def relay_handler(handler, home, agent):
         args = shlex.split(handler.get("command", ""))
     except ValueError:
         return False
-    client = home / ".local/share/agent-relay/connector/hook-client.py"
     return (len(args) == 4 and Path(args[0]).is_absolute() and
             re.fullmatch(r"python(?:3(?:\.\d+)?)?", Path(args[0]).name.lower()) is not None and
-            args[1] == str(client) and args[2] == agent and re.fullmatch(r"[A-Za-z0-9_-]+", args[3]) is not None)
+            args[1] in {str(home / p) for p in RELAY_CLIENTS} and args[2] == agent and
+            re.fullmatch(r"[A-Za-z0-9_-]+", args[3]) is not None)
 
 
 def hook_digest(handlers):
@@ -296,10 +350,10 @@ def share_relay(groups, home, agent, event, target):
         accepted = (None, "", "*") if event == "PermissionRequest" else ("AskUserQuestion|ExitPlanMode",)
         if matcher not in accepted or set(group) - {"hooks", "matcher"}:
             raise ValueError("Review the scoped Agent Relay hook before sharing approvals.")
-        client = home / ".local/share/agent-relay/connector/hook-client.py"
-        info = client.stat()
-        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-            raise ValueError("The Agent Relay client must be owned by this user.")
+        for i in positions:
+            info = Path(shlex.split(handlers[i]["command"])[1]).stat()
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                raise ValueError("The Agent Relay client must be owned by this user.")
         if any(not isinstance(handlers[i].get("timeout", 570), (int, float)) or
                not math.isfinite(handlers[i].get("timeout", 570)) or handlers[i].get("timeout", 570) <= 0
                for i in positions):
@@ -337,11 +391,13 @@ def restore_relay(groups, entries, home, agent):
     return groups
 
 
-def configure_approvals(controller, install, home=None, runtime=None, share_agent_relay=False):
-    """Preserve unrelated hooks, symlinks, permissions and the original settings."""
+def configure_approvals(controller, install, home=None, runtime=None, share_agent_relay=False, local=False):
+    """Preserve unrelated hooks, symlinks, permissions and the original settings.
+
+    `local`: the hook on this Mac, which reaches Muster over HTTP rather than SSH."""
     explicit_home = home is not None
     home = Path.home() if home is None else Path(home)
-    folder, run = relay_paths(controller, home, runtime)
+    folder, run = (local_folder(home), None) if local else relay_paths(controller, home, runtime)
     client = folder / "hook.py"
     peers_before, peers = read_peers(folder, home)
     updated_peers = []
@@ -370,6 +426,8 @@ def configure_approvals(controller, install, home=None, runtime=None, share_agen
                 if not isinstance(group, dict) or not isinstance(group.get("hooks", []), list):
                     raise ValueError("Unexpected hook group: " + str(link))
                 def owned(handler):
+                    if local and install and direct_muster(handler):
+                        return True
                     try:
                         return isinstance(handler, dict) and shlex.split(handler.get("command", ""))[1:2] == [str(client)]
                     except ValueError:
@@ -397,8 +455,12 @@ def configure_approvals(controller, install, home=None, runtime=None, share_agen
                 changed = True
             wanted = event == "PermissionRequest" or agent == "claude"
             if install and wanted:
+                # On this Mac, run with the Python Relay's own hook uses: it's known to work there.
+                python = next((shlex.split(h["command"])[0] for e in updated_peers for h in e["group"]["hooks"]),
+                              None) if local else None
+                python = python or shutil.which("python3") or sys.executable
                 command = " ".join(shlex.quote(s) for s in
-                                   (shutil.which("python3") or sys.executable, str(client), str(run / "approvals.sock"), agent, event))
+                                   (python, str(client), "local" if local else str(run / "approvals.sock"), agent, event))
                 handler = {"type": "command", "command": command,
                            "timeout": 630 if agent == "codex" else 3600}
                 group = {"hooks": [handler]}
@@ -616,10 +678,12 @@ class ApprovalBridge:
 
 if __name__ == "__main__" and any(v in sys.argv for v in ("--install-approvals", "--remove-approvals")):
     try:
-        controller = sys.argv[sys.argv.index("--controller") + 1]
-        changed = configure_approvals(controller, "--install-approvals" in sys.argv,
-                                      share_agent_relay="--share-with-agent-relay" in sys.argv)
-        _, shared = read_peers(relay_paths(controller)[0])
+        local = "--local" in sys.argv
+        home = sys.argv[sys.argv.index("--home") + 1] if "--home" in sys.argv else None
+        controller = None if local else sys.argv[sys.argv.index("--controller") + 1]
+        changed = configure_approvals(controller, "--install-approvals" in sys.argv, home=home,
+                                      share_agent_relay="--share-with-agent-relay" in sys.argv, local=local)
+        _, shared = read_peers(local_folder(home) if local else relay_paths(controller, home)[0], home)
         print(json.dumps({"changed": changed, "installed": "--install-approvals" in sys.argv,
                           "shared_agent_relay_hooks": sum(len(e["group"]["hooks"]) for e in shared)}))
     except (ValueError, OSError, IndexError) as error:

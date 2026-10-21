@@ -150,7 +150,7 @@ final class OnboardingModel: ObservableObject {
     func installed(_ agent: Agent) -> Bool {
         switch sources[agent] {
         case .ok, .unreadable: return true
-        case .notInstalled, nil: return agent.icon != nil
+        case .notInstalled, nil: return agent.appURL != nil
         }
     }
 
@@ -408,7 +408,7 @@ private struct AgentRow: View {
     private var detail: String {
         switch state {
         case nil: return "Looking…"
-        case .notInstalled: return agent.icon == nil ? "Not on this Mac. Muster picks it up when you install it." : "No saved sessions yet. Start one to see it here."
+        case .notInstalled: return agent.appURL == nil ? "Not on this Mac. Muster picks it up when you install it." : "No saved sessions yet. Start one to see it here."
         case .ok, .unreadable: return state!.summary
         }
     }
@@ -419,7 +419,7 @@ private struct AgentRow: View {
         case .ok: Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(.green)
                 .symbolEffect(.bounce, value: state)
         case .unreadable: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 18)).foregroundStyle(.orange)
-        case .notInstalled: Text(agent.icon == nil ? "Not found" : "No sessions yet").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
+        case .notInstalled: Text(agent.appURL == nil ? "Not found" : "No sessions yet").font(.system(size: 12, weight: .medium)).foregroundStyle(.tertiary)
         }
     }
 }
@@ -619,7 +619,9 @@ private struct AnswerPage: View {
                     .toggleStyle(.switch).labelsHidden()
                     .accessibilityLabel("Answer \(agent.name) prompts from Muster")
             }
-            Text("Adds one hook to \(HookInstaller.displayPath(agent)) and keeps a backup.")
+            Text(HookInstaller.relayAlone(agent) || HookInstaller.sharedWithRelay(agent)
+                 ? "Shares Agent Relay's hook: both get each request, and the first answer wins."
+                 : "Adds one hook to \(HookInstaller.displayPath(agent)) and keeps a backup.")
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
                 .padding(.leading, 48)
             if on {

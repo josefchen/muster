@@ -88,8 +88,108 @@ final class Headless {
         files()
         failSafe()
         abuse()
+        sharedWithRelay()
     }
 
+    // MARK: sharing with Agent Relay
+
+    /// Stands in for Agent Relay's hook client: it holds each request until a file answers it,
+    /// and notes when the shared hook withdraws its copy (SIGTERM to its process group).
+    private static let relayClient = """
+    import json, pathlib, signal, sys, time
+    log = pathlib.Path(__file__).with_name("relay-log")
+    log.mkdir(exist_ok=True)
+    sid = json.loads(sys.stdin.read() or "{}").get("session_id", "none")
+    (log / (sid + ".started")).write_text("1")
+    def withdrawn(*_):
+        (log / (sid + ".withdrawn")).write_text("1")
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, withdrawn)
+    answer = log / (sid + ".answer")
+    while not answer.exists():
+        time.sleep(.05)
+    print(answer.read_text())
+    """
+
+    /// As Agent Relay's installer leaves things, Relay's hook holds every approval and
+    /// Muster's are gone. Turning answering on must share, not race it.
+    private func sharedWithRelay() {
+        section("Hooks: shared with Agent Relay")
+        let client = "Library/Application Support/AgentRelay/connector/hook-client.py"
+        let relayLog = "Library/Application Support/AgentRelay/connector/relay-log/"
+        fx.write(client, Data(Self.relayClient.utf8))
+        func relay(_ agent: String) -> [String: Any] {
+            ["type": "command", "command": "/usr/bin/python3 '\(fx.path(client))' \(agent) default", "timeout": 570]
+        }
+        app.post("/hooks", ["agent": "claude", "install": false])
+        app.post("/hooks", ["agent": "codex", "install": false])
+        var claude = fx.read(".claude/settings.json").flatMap(parseJSON) as? [String: Any] ?? [:]
+        var hooks = claude["hooks"] as? [String: Any] ?? [:]
+        hooks["PermissionRequest"] = (hooks["PermissionRequest"] as? [Any] ?? []) + [["hooks": [relay("claude")]]]
+        hooks["PreToolUse"] = (hooks["PreToolUse"] as? [Any] ?? []) + [["matcher": "AskUserQuestion|ExitPlanMode", "hooks": [relay("claude")]]]
+        claude["hooks"] = hooks
+        fx.write(".claude/settings.json", json(claude))
+        var codex = fx.read(".codex/hooks.json").flatMap(parseJSON) as? [String: Any] ?? [:]
+        var codexHooks = codex["hooks"] as? [String: Any] ?? [:]
+        codexHooks["PermissionRequest"] = (codexHooks["PermissionRequest"] as? [Any] ?? []) + [["hooks": [relay("codex")]]]
+        codex["hooks"] = codexHooks
+        fx.write(".codex/hooks.json", json(codex))
+        check(app.state().map { !$0.hooks("claude") && !$0.hooks("codex") } == true,
+              "with Relay holding the hooks and Muster's gone, Muster isn't answering")
+
+        let r = app.post("/hooks", ["agent": "claude", "install": true])
+        // Setup runs Relay's Python, whose first launch on a cold Mac can outlast the request.
+        expect(app, "turning answering on shares Relay's hook rather than adding a second", within: 30) { _ in
+            let text = String(decoding: self.fx.read(".claude/settings.json") ?? Data(), as: UTF8.self)
+            return text.contains("Muster/approvals/hook.py") && !text.contains("AgentRelay/connector")
+        }
+        check(r == nil || (r?["installed"] as? Bool == true && r?["error"] == nil), "…without an error")
+        let shared = String(decoding: fx.read(".claude/settings.json") ?? Data(), as: UTF8.self)
+        let codexShared = String(decoding: fx.read(".codex/hooks.json") ?? Data(), as: UTF8.self)
+        check(!shared.contains("AgentRelay/connector") && !codexShared.contains("AgentRelay/connector")
+              && shared.contains("Muster/approvals/hook.py") && shared.contains(" local claude PermissionRequest")
+              && codexShared.contains(" local codex PermissionRequest") && !shared.contains("X-Muster-Token"),
+              "…one shared hook per agent now asks both; neither Relay's nor Muster's own is left to race it")
+        check(app.state().map { $0.hooks("claude") && $0.hooks("codex") } == true, "…and Muster reports both agents answering")
+        let endpoint = "Library/Application Support/Muster/approvals/muster.json"
+        let published = fx.read(endpoint).flatMap(parseJSON) as? [String: Any]
+        let mode = (try? FileManager.default.attributesOfItem(atPath: fx.path(endpoint))[.posixPermissions] as? Int) ?? 0
+        check(published?["port"] as? Int == Int(app.state()?.hookPort ?? 0) && mode == 0o600,
+              "the shared hook finds Muster's port and token in a private file")
+
+        let settings = shared.data(using: .utf8).flatMap(parseJSON) as? [String: Any] ?? [:]
+        let command = ((settings["hooks"] as? [String: Any])?["PermissionRequest"] as? [[String: Any]] ?? [])
+            .flatMap { $0["hooks"] as? [[String: Any]] ?? [] }.compactMap { $0["command"] as? String }
+            .first { $0.contains("Muster/approvals/hook.py") } ?? "false"
+        let first = ClaudeFixture(fx, project: "relay-share")
+        first.write(first.user("Share it"), first.toolUse("Bash", input: ["command": "printf shared"]))
+        let run = Shell(command, stdin: json(first.permissionPayload(command: "printf shared", suggestions: [])), env: shellEnv)
+        let p = held("claude", first.sid, "permission", "a request through the shared hook raises Muster's alert")
+        expect(app, "…and reaches Relay too") { _ in self.fx.read(relayLog + first.sid + ".started") != nil }
+        answer(p, "allow")
+        let out = run.wait(5)
+        check(out?.status == 0 && sameJSON(out?.stdout, Expect.allow), "answering in Muster returns the allow to Claude")
+        expect(app, "…and withdraws Relay's copy") { _ in self.fx.read(relayLog + first.sid + ".withdrawn") != nil }
+
+        let second = ClaudeFixture(fx, project: "relay-answers")
+        second.write(second.user("Relay it"), second.toolUse("Bash", input: ["command": "printf relayed"]))
+        let run2 = Shell(command, stdin: json(second.permissionPayload(command: "printf relayed", suggestions: [])), env: shellEnv)
+        _ = held("claude", second.sid, "permission", "another request raises the alert")
+        fx.write(relayLog + second.sid + ".answer", json(Expect.deny))
+        let out2 = run2.wait(5)
+        check(out2?.status == 0 && sameJSON(out2?.stdout, Expect.deny), "answering in Relay returns its decision to Claude")
+        expect(app, "…and takes Muster's alert down") { $0.prompt(agent: "claude", sid: second.sid) == nil }
+
+        app.post("/hooks", ["agent": "claude", "install": false])
+        let restored = String(decoding: fx.read(".claude/settings.json") ?? Data(), as: UTF8.self)
+        let codexRestored = String(decoding: fx.read(".codex/hooks.json") ?? Data(), as: UTF8.self)
+        check(restored.contains("AgentRelay/connector") && codexRestored.contains("AgentRelay/connector")
+              && !restored.contains("Muster/approvals/hook.py") && !codexRestored.contains("Muster/approvals/hook.py")
+              && app.state().map { !$0.hooks("claude") && !$0.hooks("codex") } == true,
+              "turning it off gives both agents back to Relay's own hook")
+    }
+
+    // MARK: helpers
     // MARK: helpers
 
     /// Flips a sentinel session and waits for it, so every write before it has been scanned.
@@ -438,7 +538,11 @@ final class Headless {
         let waiting = ClaudeFixture(fx, project: "heuristic")
         waiting.write(waiting.user("Migrate", at: now.addingTimeInterval(-25)), waiting.toolUse("Bash", input: ["command": "rm -rf dist"], at: now.addingTimeInterval(-20)))
         waiting.appRecord(appID: "local_" + UUID().uuidString.lowercased(), title: "Migrate", mode: "default", activity: now.addingTimeInterval(-20))
-        expect(app, "Claude: a tool call unanswered 15 s in a prompting mode reads as needs you") { $0.status(waiting.id) == "needsYou" }
+        // Muster's hook is installed here, so real prompts arrive through it: a tool call that's
+        // merely slow must not raise a false alarm. (Without the hook it's still guessed; see Tests/main.swift.)
+        expect(app, "Claude: with the hook installed, a tool call unanswered 15 s stays working, not needs you") {
+            $0.hooks("claude") && $0.status(waiting.id) == "working"
+        }
         let s = app.state()
         check(s?.status(stale.id) == "idle", "a session working but silent for 20 minutes reads as idle")
         check(s?.status(ancient.id) == nil, "a session that finished over 3 hours ago is dropped")

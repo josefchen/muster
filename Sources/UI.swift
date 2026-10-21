@@ -162,9 +162,13 @@ final class SessionRow: Flipped {
         }
         unreadDot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
         [unreadDot, icon, title, detail, state, stateDot, tokens].forEach(addSubview)
+        NotificationCenter.default.addObserver(self, selector: #selector(iconLoaded), name: Agent.iconLoaded, object: nil)
     }
 
     required init?(coder: NSCoder) { nil }
+
+    /// The app's own icon arrived in place of the drawn one.
+    @objc private func iconLoaded() { icon.image = session?.agent.icon }
 
     /// The keys that answer this prompt, shown where the usage normally sits.
     static func answerHint(_ p: Prompt) -> String {

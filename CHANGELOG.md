@@ -8,10 +8,13 @@ Watch sessions on your SSH hosts alongside this Mac, with clearer connection sta
 
 - <!-- network --> **Watch your other machines.** Enable hosts in Settings → Remote sessions to monitor recent Codex, Claude Code and Cursor sessions through your existing SSH access. Questions show the host where you answer; disconnected hosts keep their last summaries and reconnect automatically. Python 3 is required on each host.
 - <!-- checkmark.bubble --> **Remote approvals reach Muster.** Optional hooks relay Claude Code and Codex permission requests over SSH, including requests absent from session logs. Answers return to the correct host and request. A lost connection hands the decision back to the agent.
-- <!-- questionmark.bubble --> **Questions stay visible.** Recognizes both Codex question APIs and keeps unanswered questions through new turns and restarts. Answering one question in a batch keeps the remaining ones visible. Long remote tool output no longer pushes a waiting question out of view.
+- <!-- questionmark.bubble --> **Questions that come and go.** Recognizes both Codex question APIs. A question keeps asking until you answer it, write to that thread, or three hours pass, so one you moved on from no longer says Needs you for days. Answering one question in a batch keeps the rest. Long remote tool output no longer pushes a waiting question out of view.
+- <!-- bell.badge.slash --> **No false alarms from slow commands.** With Muster's hook delivering Claude's real prompts, a build or test that runs a while stays Working instead of being taken for a permission prompt.
+- <!-- arrow.triangle.merge --> **Works alongside Agent Relay.** Relay's installer removed Muster's hooks, so Muster stopped getting requests without saying why. Turning answering on now shares Relay's hook on this Mac: both get each request, the first answer goes back to the agent, and the other copy is withdrawn. Settings says when Relay answers alone or has added its hook back.
 - <!-- arrow.clockwise --> **Sessions come back.** A temporary lock on Codex's or Cursor's database keeps the last known session list and retries, instead of dropping sessions or staying empty after the lock clears.
 - <!-- waveform --> **Long Codex tasks stay working.** New token activity keeps a long task active without clearing an approval that still needs your answer.
 - <!-- desktopcomputer --> **Intel Macs work too.** Includes the startup fix for Intel Macs; local build and test scripts now use your Mac's architecture.
+- <!-- photo --> **Icons never hold Muster up.** Agent icons load in the background, so a slow image decoder can't freeze an alert, and Claude's new-style icon no longer shows as an empty square.
 
 ## 1.3.2 · 2026-10-14
 

@@ -19,6 +19,12 @@ final class Store {
 
     private let queue = DispatchQueue(label: "muster.scan", qos: .utility)
     private let claude = ClaudeReader()
+    /// Whether Muster's Claude hook is in place, read at most every few seconds.
+    private var hookChecked: (at: Date, on: Bool) = (.distantPast, false)
+    private var claudeHooked: Bool {
+        if Date().timeIntervalSince(hookChecked.at) > 5 { hookChecked = (Date(), !Self.demo && HookInstaller.isInstalled(.claude)) }
+        return hookChecked.on
+    }
     private let codex = CodexReader()
     private let cursor = CursorReader()
     private var stream: FSEventStreamRef?
@@ -84,8 +90,10 @@ final class Store {
         scanned = enabled
         let changed = changes
         changes = Changes()
+        let hooked = claudeHooked
         queue.async { [weak self] in
             guard let self else { return }
+            self.claude.promptsByHook = hooked
             let found: [Session] = autoreleasepool {
                 let now = Date()
                 let since = { (a: Agent) in fresh.contains(a) ? Changes.all : changed }
