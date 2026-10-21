@@ -27,26 +27,59 @@ enum Agent: String, CaseIterable {
         }
     }
 
-    /// The app's own icon, loaded once and pinned to a small representation.
-    /// The agent's app icon, or a drawn one when the app isn't installed (Claude Code or
-    /// Codex used only in a terminal), so a row is never missing its icon.
+    /// The agent's app, when it's installed.
+    var appURL: URL? { bundleIDs.lazy.compactMap { NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }.first }
+
+    /// The agent's icon, at once: its app's own once that has loaded, the drawn one until
+    /// then, or for good when the app isn't installed (Claude Code or Codex only in a
+    /// terminal). Loading happens off the main thread, so a slow image decoder (seen taking
+    /// six seconds per image on one Mac) never holds up an alert.
     var icon: NSImage? {
         if let hit = Agent.icons[self] { return hit }
-        let image: NSImage
-        if let url = bundleIDs.lazy.compactMap({ NSWorkspace.shared.urlForApplication(withBundleIdentifier: $0) }).first {
+        Agent.load(self)
+        return Agent.icons[self] ?? drawnIcon
+    }
+
+    /// Posted on the main thread when an app's own icon has replaced the drawn one.
+    static let iconLoaded = Notification.Name("dev.muster.app.icon-loaded")
+
+    /// Starts loading the agent's app icon, once.
+    static func load(_ agent: Agent) {
+        guard !loading.contains(agent) else { return }
+        loading.insert(agent)
+        guard let url = agent.appURL else { icons[agent] = agent.drawnIcon; return }
+        DispatchQueue.global(qos: .utility).async {
             // The app's own .icns first: macOS 26 hands out Icon Composer icons lazily, and asked
-            // too early it returns a dashed placeholder that would be kept for good.
+            // too early it returns a dashed placeholder.
             let bundle = Bundle(url: url)
             let file = bundle?.object(forInfoDictionaryKey: "CFBundleIconFile") as? String
             let icns = file.flatMap { bundle?.url(forResource: ($0 as NSString).deletingPathExtension, withExtension: "icns") }
-            image = icns.flatMap(NSImage.init(contentsOf:)) ?? NSWorkspace.shared.icon(forFile: url.path)
-        } else {
-            image = drawnIcon
+            let source = icns.flatMap(NSImage.init(contentsOf:)) ?? NSWorkspace.shared.icon(forFile: url.path)
+            // Decoded here, into a small bitmap, so drawing it later costs nothing.
+            let rendered = rasterized(source, points: 64, scale: 2)
+            DispatchQueue.main.async {
+                icons[agent] = rendered
+                NotificationCenter.default.post(name: iconLoaded, object: agent.rawValue)
+            }
         }
-        image.size = NSSize(width: 64, height: 64)
-        Agent.icons[self] = image
-        return image
     }
+
+    private static func rasterized(_ image: NSImage, points: CGFloat, scale: CGFloat) -> NSImage {
+        let pixels = Int(points * scale)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: pixels, pixelsHigh: pixels, bitsPerSample: 8,
+                                         samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                         bytesPerRow: 0, bitsPerPixel: 0) else { return image }
+        rep.size = NSSize(width: points, height: points)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        image.draw(in: NSRect(x: 0, y: 0, width: points, height: points))
+        NSGraphicsContext.restoreGraphicsState()
+        let out = NSImage(size: NSSize(width: points, height: points))
+        out.addRepresentation(rep)
+        return out
+    }
+
+    private static var loading: Set<Agent> = []
 
     /// A rounded tile in the agent's colour with a plain system symbol on it.
     private var drawnIcon: NSImage {

@@ -380,6 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .search: self.deck.toggle(below: nil)
             }
         }
+        Agent.allCases.forEach(Agent.load)   // icons decode in the background before the first alert needs one
         attention = Attention()
         Updates.schedule()
         Hotkeys.shared.onAnswer = { [weak self] a in

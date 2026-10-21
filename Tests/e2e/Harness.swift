@@ -878,6 +878,11 @@ func expect(_ app: App, _ what: String, within: Double = 2, _ cond: (State) -> B
         }
         if Date().timeIntervalSince(start) > within {
             check(false, what, app.alive ? "not within \(Int(within)) s" : "the app \(app.exitDescription)")
+            // MUSTER_E2E_DEBUG=1: what the app reported when the check gave up, to see why.
+            if ProcessInfo.processInfo.environment["MUSTER_E2E_DEBUG"] == "1", let s = app.state(),
+               let data = try? JSONSerialization.data(withJSONObject: s.raw, options: [.sortedKeys]) {
+                note("    state: " + String(decoding: data.prefix(4000), as: UTF8.self))
+            }
             return false
         }
         pause(0.04)
