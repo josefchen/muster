@@ -37,10 +37,12 @@ enum LocalShare {
     static func shared(_ agent: Agent, _ path: String) -> Bool { handlers(path).contains { isRunner($0, agent) } }
 
     /// Writes the port and token the runner reads. Only while sharing, so it's never left
-    /// behind for nothing.
+    /// behind for nothing, and only when they changed. Muster checks every half minute, so
+    /// sharing set up by Relay's installer while Muster runs reaches it without a restart.
     static func publish(port: UInt16, token: String) {
         guard FileManager.default.fileExists(atPath: folder + "/hook.py"), !token.isEmpty,
-              let body = try? JSONSerialization.data(withJSONObject: ["port": Int(port), "token": token], options: [.sortedKeys]) else { return }
+              let body = try? JSONSerialization.data(withJSONObject: ["port": Int(port), "token": token], options: [.sortedKeys]),
+              FileManager.default.contents(atPath: endpoint) != body else { return }
         let staged = endpoint + ".tmp"
         guard FileManager.default.createFile(atPath: staged, contents: body, attributes: [.posixPermissions: 0o600]) else { return }
         _ = try? FileManager.default.replaceItemAt(URL(fileURLWithPath: endpoint), withItemAt: URL(fileURLWithPath: staged))

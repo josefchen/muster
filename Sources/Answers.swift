@@ -149,7 +149,10 @@ final class Prompts {
             self?.releaseIfWatched()
         }
         // Common modes, so an open menu doesn't hold a Codex prompt past curl's limit.
-        RunLoop.main.add(Timer(timeInterval: Hooks.holdSweep, repeats: true) { [weak self] _ in self?.expire() }, forMode: .common)
+        RunLoop.main.add(Timer(timeInterval: Hooks.holdSweep, repeats: true) { [weak self] _ in
+            self?.expire()
+            if let self { LocalShare.publish(port: Self.port, token: self.token) }
+        }, forMode: .common)
     }
 
     /// Keeps the port the server got, and points this install's hooks at it.
