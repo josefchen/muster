@@ -2,7 +2,7 @@
 
 What changed in each release of Muster, newest first. The app shows the latest one after you update, and every release is also at [agentmuster.app/changelog](https://agentmuster.app/changelog).
 
-## 1.4.0 · Unreleased
+## 1.4.0 · 2026-10-20
 
 Watch sessions on your SSH hosts alongside this Mac, with clearer connection states.
 
