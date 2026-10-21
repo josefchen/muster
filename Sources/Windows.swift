@@ -115,6 +115,7 @@ private struct SettingsView: View {
     @State private var notifications: UNAuthorizationStatus = .notDetermined
     @State private var answering: [Agent: Bool] = [:]
     @State private var answerError: String?
+    @State private var changing: Set<Agent> = []
     @State private var broken: [String] = []
     private let tick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -197,11 +198,13 @@ private struct SettingsView: View {
                 ForEach([Agent.claude, Agent.codex], id: \.self) { agent in
                     VStack(alignment: .leading, spacing: 12) {
                         Toggle(isOn: Binding(get: { answering[agent] ?? false }, set: { on in
-                            do {
-                                try on ? HookInstaller.install(agent) : HookInstaller.uninstall(agent)
-                                answerError = nil
-                            } catch { answerError = error.localizedDescription }
-                            answering[agent] = HookInstaller.isInstalled(agent)
+                            answering[agent] = on
+                            changing.insert(agent)
+                            HookInstaller.set(agent, on) { error in
+                                answerError = error?.localizedDescription
+                                answering[agent] = HookInstaller.isInstalled(agent)
+                                changing.remove(agent)
+                            }
                         })) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(agent == .claude ? "Claude Code" : "Codex")
@@ -219,8 +222,9 @@ private struct SettingsView: View {
                                 }
                             }
                         }
+                        .disabled(changing.contains(agent))
                         .accessibilityLabel("Answer \(agent == .claude ? "Claude Code" : agent.name) prompts from Muster")
-                        if answering[agent] == true { HookSetupView(agent: agent) }
+                        if answering[agent] == true, !changing.contains(agent) { HookSetupView(agent: agent) }
                     }
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("approval-row-\(agent.rawValue)")
@@ -328,7 +332,8 @@ private struct SettingsView: View {
     private func refresh() {
         HookSetup.shared.refresh()
         sources = Store.shared.sources
-        answering = [.claude: HookInstaller.isInstalled(.claude), .codex: HookInstaller.isInstalled(.codex)]
+        // A switch being changed keeps what it shows until the change finishes.
+        for agent in [Agent.claude, .codex] where !changing.contains(agent) { answering[agent] = HookInstaller.isInstalled(agent) }
         broken = HookInstaller.brokenClaudeHooks()
         week = Stats.week()
         Notifier.status { notifications = $0 }

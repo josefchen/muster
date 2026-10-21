@@ -121,6 +121,7 @@ final class OnboardingModel: ObservableObject {
     @Published private(set) var sources: [Agent: SourceState] = [:]
     @Published private(set) var notifications: UNAuthorizationStatus = .notDetermined
     @Published private(set) var hooks: [Agent: Bool] = [:]
+    @Published private(set) var changing: Set<Agent> = []
     @Published private(set) var broken: [String] = []
     @Published private(set) var keyDown = false
     @Published var triedSwitcher = false
@@ -193,7 +194,8 @@ final class OnboardingModel: ObservableObject {
         Notifier.status { [weak self] in self?.notifications = $0 }
         guard !Store.demo else { return }
         HookSetup.shared.refresh()
-        hooks = [.claude: HookInstaller.isInstalled(.claude), .codex: HookInstaller.isInstalled(.codex)]
+        // A switch being changed keeps what it shows until the change finishes.
+        for agent in [Agent.claude, .codex] where !changing.contains(agent) { hooks[agent] = HookInstaller.isInstalled(agent) }
         broken = HookInstaller.brokenClaudeHooks()
     }
 
@@ -204,13 +206,14 @@ final class OnboardingModel: ObservableObject {
 
     func setHook(_ agent: Agent, _ on: Bool) {
         if Store.demo { hooks[agent] = on; return }
-        do {
-            try on ? HookInstaller.install(agent) : HookInstaller.uninstall(agent)
-            hookError = nil
-        } catch {
-            hookError = error.localizedDescription
+        hooks[agent] = on
+        changing.insert(agent)
+        HookInstaller.set(agent, on) { [weak self] error in
+            guard let self else { return }
+            hookError = error?.localizedDescription
+            changing.remove(agent)
+            refresh()
         }
-        refresh()
     }
 
     func removeBroken() {
@@ -617,6 +620,7 @@ private struct AnswerPage: View {
                 Spacer()
                 Toggle("", isOn: Binding(get: { on }, set: { model.setHook(agent, $0) }))
                     .toggleStyle(.switch).labelsHidden()
+                    .disabled(model.changing.contains(agent))
                     .accessibilityLabel("Answer \(agent.name) prompts from Muster")
             }
             Text(HookInstaller.relayAlone(agent) || HookInstaller.sharedWithRelay(agent)
@@ -624,7 +628,7 @@ private struct AnswerPage: View {
                  : "Adds one hook to \(HookInstaller.displayPath(agent)) and keeps a backup.")
                 .font(.system(size: 11)).foregroundStyle(.tertiary)
                 .padding(.leading, 48)
-            if on {
+            if on, !model.changing.contains(agent) {
                 HookSetupView(agent: agent).id(agent)
                 .padding(.leading, 48)
             }

@@ -367,10 +367,10 @@ enum HookInstaller {
     static var codexHooks: String { (ProcessInfo.processInfo.environment["CODEX_HOME"] ?? home + "/.codex") + "/hooks.json" }
 
     /// This install's hooks for the agent, if Muster answers it.
-    private static func hooks(_ agent: Agent) -> Hooks? {
+    private static func hooks(_ agent: Agent, port: UInt16 = Prompts.port, token: String = Prompts.shared.token) -> Hooks? {
         switch agent {
-        case .claude: return Hooks(agent: .claude, path: claudeSettings, port: Prompts.port, token: Prompts.shared.token)
-        case .codex: return Hooks(agent: .codex, path: codexHooks, port: Prompts.port, token: Prompts.shared.token)
+        case .claude: return Hooks(agent: .claude, path: claudeSettings, port: port, token: token)
+        case .codex: return Hooks(agent: .codex, path: codexHooks, port: port, token: token)
         case .cursor: return nil
         }
     }
@@ -386,29 +386,50 @@ enum HookInstaller {
         let data = (try? Data(contentsOf: URL(fileURLWithPath: config))) ?? Data()
         return HookVerification.digest(Data(digest.utf8) + data)
     }
+    static func install(_ agent: Agent) throws {
+        try add(agent, port: Prompts.port, token: Prompts.shared.token)
+        HookSetup.shared.refresh()
+    }
+    static func repoint(_ agent: Agent) throws { try hooks(agent)?.repoint(); HookSetup.shared.refresh() }
+    static func uninstall(_ agent: Agent) throws {
+        try remove(agent, port: Prompts.port, token: Prompts.shared.token)
+        HookSetup.shared.refresh()
+    }
+
+    /// Installs or removes on a background queue and reports back on the main one. Sharing
+    /// with Agent Relay runs Python, which can take seconds to start, and the switch in
+    /// Settings or the tour shouldn't freeze Muster meanwhile.
+    static func set(_ agent: Agent, _ on: Bool, done: @escaping (Error?) -> Void) {
+        let port = Prompts.port, token = Prompts.shared.token
+        DispatchQueue.global(qos: .userInitiated).async {
+            var failure: Error?
+            do { try on ? add(agent, port: port, token: token) : remove(agent, port: port, token: token) } catch { failure = error }
+            DispatchQueue.main.async {
+                HookSetup.shared.refresh()
+                done(failure)
+            }
+        }
+    }
+
     /// Where Agent Relay already answers, shares its hook rather than adding a second one:
     /// two blocking hooks hold the agent until both return.
-    static func install(_ agent: Agent) throws {
+    private static func add(_ agent: Agent, port: UInt16, token: String) throws {
         guard agent != .cursor else { return }
         if LocalShare.relayHolds(path(agent)) || LocalShare.shared(agent, path(agent)) {
             guard let script = Bundle.main.url(forResource: "remote_approvals", withExtension: "py") else {
                 throw NSError(domain: "Muster", code: 1, userInfo: [NSLocalizedDescriptionKey: "This copy of Muster is missing its approval helper."])
             }
-            try LocalShare.enable(python: LocalShare.relayPython([claudeSettings, codexHooks]), script: script,
-                                  port: Prompts.port, token: Prompts.shared.token)
+            try LocalShare.enable(python: LocalShare.relayPython([claudeSettings, codexHooks]), script: script, port: port, token: token)
         } else {
-            try hooks(agent)?.install()
+            try hooks(agent, port: port, token: token)?.install()
         }
-        HookSetup.shared.refresh()
     }
-    static func repoint(_ agent: Agent) throws { try hooks(agent)?.repoint(); HookSetup.shared.refresh() }
     /// Turning one agent off while sharing gives both back to Relay: the shared hook covers both.
-    static func uninstall(_ agent: Agent) throws {
+    private static func remove(_ agent: Agent, port: UInt16, token: String) throws {
         if LocalShare.shared(agent, path(agent)), let script = Bundle.main.url(forResource: "remote_approvals", withExtension: "py") {
             try LocalShare.disable(python: LocalShare.relayPython([claudeSettings, codexHooks]), script: script)
         }
-        try hooks(agent)?.uninstall()
-        HookSetup.shared.refresh()
+        try hooks(agent, port: port, token: token)?.uninstall()
     }
     static func path(_ agent: Agent) -> String { agent == .claude ? claudeSettings : codexHooks }
     /// Agent Relay answers this agent now, without Muster.

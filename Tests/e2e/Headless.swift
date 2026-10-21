@@ -385,7 +385,7 @@ final class Headless {
         app.post("/setup", ["agent": "claude"])
         let c = ClaudeFixture(fx, project: "verify-claude")
         c.write(c.user("Check connection"), c.toolUse("Bash", input: ["command": "printf check"]))
-        expect(app, "the test session is visible") { $0.status(c.id) == "working" }
+        expect(app, "the test session is visible", within: 5) { $0.status(c.id) == "working" }
         let payload = c.permissionPayload(command: "printf check", suggestions: [])
         _ = HTTP.request(permissionURL.port, "POST", permissionURL.path,
                          headers: ["X-Muster-Token": "wrong"], body: json(payload), timeout: 2)
